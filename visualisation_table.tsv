@@ -1,0 +1,8 @@
+#name	mode	tree_width	features_allowed	family_numbers	font_size	row_height	gene_height	gene_gap	bases_per_pixel	pad	domain_height	label_step	arrow_head	min_gene_width	band_opacity
+neighbors	versatile	False	cluster_rna	TRUE	14	24	8	default	12.0	16	6	16	default	default	default
+tree	triangles	1	cluster_rna	TRUE	14	24	20	1	False	16	default	default	default	default	default
+domains	versatile	False	cluster_rna,domains,tmhmm,signalp	FALSE	14	24	8	default	12.0	16	6	16	default	default	default
+sismis	versatile	False	sismis,monochrome	FALSE	14	24	8	default	12.0	16	6	16	default	default	0.28
+classic	classic	False	cluster_rna	TRUE	14	20	15	default	16.0	16	6	16	12	12	default
+all-in-one	versatile	1	cluster_rna,domains,tmhmm,signalp,sismis	TRUE	14	24	8	default	12.0	16	6	16	default	default	default
+tree_classic	classic	1	cluster_rna	TRUE	14	20	15	default	16.0	16	6	16	12	12	default

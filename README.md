@@ -47,6 +47,7 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   colours and numbers, and every size and spacing value
 * Figures redrawn from a finished run without repeating the analysis, so the
   look can be tuned without re-downloading anything
+* PDF output alongside the SVGs, from any run or redraw
 
 ### Results
 
@@ -66,5 +67,7 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   status, external commands and full tracebacks
 
 ## Version history
+
+**1.0.1** — PDF output alongside every figure
 
 **1.0.0** — First FlaGs3 release

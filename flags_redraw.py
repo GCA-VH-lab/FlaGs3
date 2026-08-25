@@ -384,7 +384,8 @@ def _feature_kind(kind: str) -> str:
 	return "tmhmm"
 
 
-def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False):
+def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
+			   pdf=False):
 	"""Render every spec. Returns the list of figure names actually written."""
 	written = []
 	for spec in specs:
@@ -400,6 +401,9 @@ def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False):
 		with open(out_path("_{}.svg".format(spec.name)), "w") as out:
 			out.write(svg)
 		written.append(spec.name)
+	if pdf and written:
+		import flags_pdf
+		flags_pdf.convert_all([out_path("_{}.svg".format(n)) for n in written])
 	return written
 
 
@@ -422,6 +426,9 @@ def main():
                         help="Write a starting {} into --data and "
                              "exit, so you have something to edit.".format(
                                  TABLE_NAME))
+    parser.add_argument("-pdf", "--pdf", action="store_true",
+                        help="Also write a PDF beside each SVG. Needs one of "
+                             "cairosvg, svglib, rsvg-convert or inkscape.")
     parser.add_argument("-vb", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -463,7 +470,8 @@ def main():
             len({g.query for g in data.genes}), len(data.families), len(specs),
             os.path.basename(table)))
 
-    written = render_all(specs, data, out_path, verbose=args.verbose)
+    written = render_all(specs, data, out_path, verbose=args.verbose,
+                         pdf=args.pdf)
     if not written:
         sys.exit("Error: nothing was drawn. Check the figure table and that "
                  "--data holds the tables the figures need.")
@@ -472,6 +480,8 @@ def main():
         else out_dir))
     for name in written:
         print("  {}_{}.svg".format(prefix, name))
+        if args.pdf and os.path.isfile(out_path("_{}.pdf".format(name))):
+            print("  {}_{}.pdf".format(prefix, name))
 
 
 if __name__ == "__main__":

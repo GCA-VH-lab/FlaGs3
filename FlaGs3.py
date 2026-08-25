@@ -993,7 +993,7 @@ def family_numbers(families, rna_accessions=None):
 	return number
 
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1163,6 +1163,7 @@ def build_parser():
 	parser.add_argument("-to", "--tree_order", action="store_true", help=" Order the neighbours output by tree leaf order (implies --tree). ")
 	parser.add_argument("-d", "--domains", action="store_true", help=" Scan flanking proteins for domains and write <dir>_domains.tsv (requires --hmmdb). ")
 	parser.add_argument("-db", "--hmmdb", default="./pfam_db/Pfam-A.hmm", help=" HMM database file (e.g. Pfam) for domain scanning. ")
+	parser.add_argument("-pdf", "--pdf", action="store_true", help=" Also write a PDF beside every figure. Needs one of cairosvg, svglib, rsvg-convert or inkscape; without one the figures are still written as SVG. ")
 	parser.add_argument("-nf", "--no_figures", action="store_true", help=" Run the analysis and write the tables, but draw nothing. Figures can be produced later with flags_redraw.py. ")
 	parser.add_argument("-f", "--figures", metavar="TSV", help=" Figure table controlling which figures are drawn and every parameter of how. Default: visualisation_table.tsv, written into the output directory for you to edit and re-apply with flags_redraw.py. ")
 	parser.add_argument("-cl", "--clans", help=" Pfam-A.clans.tsv(.gz): colour domains by clan instead of family. ")
@@ -1749,6 +1750,8 @@ def main():
 		cmd = [sys.executable, redraw, "--data", args.output, "--prefix", prefix]
 		if args.figures:
 			cmd += ["--format", args.figures]
+		if args.pdf:
+			cmd.append("--pdf")
 		if args.verbose:
 			cmd.append("--verbose")
 		debug("running: {}".format(" ".join(cmd)))

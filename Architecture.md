@@ -36,6 +36,7 @@ extraction and feed extra layers into the figures.
 | Module | Responsibility | Imported |
 |---|---|---|
 | `FlaGs3.py` | data pipeline and CLI | always |
+| `flags_pdf.py` | SVG to PDF, one backend of several | on `--pdf` |
 | `flags_log.py` | debug output, shared by every module | always |
 | `flags_view.py` | shared styling, `OperonView` renderer | always |
 | `flags_redraw.py` | figure table, reload from an output dir, render dispatch, CLI | subprocess |
@@ -224,6 +225,17 @@ differently: the default is optional enrichment, so its absence is a debug note
 rather than a warning on every run, while a path the user typed is a typo and
 exits. It also looks next to `FlaGs3.py` and for a `.gz`, so the table works
 whether it sits with the code or in the working directory.
+
+### PDF output
+
+`flags_pdf.py` tries `cairosvg`, then `svglib`+`reportlab`, then `rsvg-convert`,
+then `inkscape`, and reports which it used under `--debug`. Availability is
+checked with `importlib.util.find_spec` rather than a trial import, so probing
+has no side effects. `cairosvg` is first because it embeds font subsets, so the
+PDF renders identically on a machine without Liberation Sans; `svglib` is a pure
+Python fallback needing no system cairo. Both were checked against real figures
+for clip paths and fill opacity, which the domain and secretion overlays depend
+on. A missing backend warns and leaves the SVGs, like every other optional tool.
 
 ### Overlays compose
 

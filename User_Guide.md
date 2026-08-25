@@ -315,6 +315,9 @@ systems, transmembrane helices and signal peptides, the query protein, RNA genes
 and pseudogenes, and a distance scale bar under any figure that shows a tree.
 Nothing is listed that is not in the picture.
 
+`--pdf` works the same way here, so a finished run can be turned into PDFs
+without redoing the analysis.
+
 `--format` takes a table from anywhere, `-o/--output` writes elsewhere, and
 `--write_table` drops a starting table into a run directory. Because the main run
 shells out to the same script, a redraw reproduces the run's figures exactly.

@@ -7,7 +7,6 @@ from typing import List, NamedTuple, Optional
 
 from Bio import Entrez, SeqIO
 
-# RefSeq protein prefixes, matching webFlaGs' accepted pattern.
 ACCESSION_RE = re.compile(r"^[ANYXW]P_\d+(\.\d+)?$", re.I)
 INSDC_RE = re.compile(r"^[A-Z]{3}\d{5,7}(\.\d+)?$")
 RESIDUES = set("ACDEFGHIKLMNPQRSTVWYBZXUO*-")

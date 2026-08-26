@@ -247,6 +247,29 @@ family colour entirely. Stroke width doubles for RNA genes, pseudogenes and
 queries, but it only emphasises what the outline colour already says -- it is not
 the sole carrier of anything.
 
+### What counts as a family
+
+`family_shared` decides whether a family is worth colouring, and it counts
+**occurrences across neighbourhoods**, not distinct accessions. RefSeq gives
+identical proteins one `WP_` accession, so a gene conserved in every genome
+collapses to a one-member family; counting accessions called that a singleton and
+greyed out precisely the genes a conservation tool exists to show. Families are
+then numbered in descending order of occurrences, so family 1 is the most
+widespread and `_outdesc.txt` reads in order. The renderer colours whatever the
+numbering labelled rather than applying its own size rule, so colour and number
+can no longer disagree -- including the trailing grey-out pass, which must key on
+"was it labelled", not on family size, or it silently undoes the colour a
+conserved one-accession family was just given.
+
+### SVG 1.1, not CSS
+
+Figures are opened in Illustrator and Inkscape as often as in a browser, so the
+output stays inside SVG 1.1. `rgba()` is CSS colour syntax: browsers accept it,
+Illustrator does not and falls back to opaque black, which turned every gene
+outline into a filled black arrow and hid the whole domain figure. Transparent
+fills are `fill="none"`, and translucency uses the `fill-opacity` attribute, which
+is part of SVG 1.1. Keep new colour values as hex or a colour keyword.
+
 ### Overlays compose
 
 `OperonView` draws family colour, family numbers, domain wedges, protein features

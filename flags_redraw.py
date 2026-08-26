@@ -369,7 +369,6 @@ def render_figure(spec: FigureSpec, data: RunData) -> str:
 							head=pick("arrow_head", OperonView.CLASSIC["head"]),
 							min_w=pick("min_gene_width", OperonView.CLASSIC["min_w"]))
 	view.numbers = data.numbers
-	# Any mode can carry the tree gutter, not just triangles.
 	if spec.tree_width and data.newick:
 		view.tree_w = int(320 * spec.tree_width)
 		view.newick = data.newick

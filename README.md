@@ -68,7 +68,14 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
-**1.0.2** — trimal settings for alignment trimming, tree files in a `tree/` subfolder,
+**1.0.5** — conserved genes are coloured as well as numbered
+
+**1.0.4** — figures open correctly in Illustrator and other SVG 1.1 editors
+
+**1.0.3** — a gene conserved across genomes is no longer treated as a singleton,
+and families are numbered in order of how widespread they are
+
+**1.0.2** — trimal for alignment trimming, tree files in a `tree/` subfolder,
 and figure styling closer to the original FlaGs
 
 **1.0.1** — PDF output alongside every figure

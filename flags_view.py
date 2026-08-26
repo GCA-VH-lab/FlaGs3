@@ -77,7 +77,9 @@ class _FlaGsBase:
 	def _family_colors(self, families: List[List[str]]) -> Dict[str, str]:
 		if getattr(self, "monochrome", False):
 			return {acc: self.GREY for fam in families for acc in fam}
-		multi = [fam for fam in families if len(fam) > 1]
+		numbers = getattr(self, "numbers", None) or {}
+		multi = ([fam for fam in families if any(a in numbers for a in fam)]
+				 if numbers else [fam for fam in families if len(fam) > 1])
 		palette = (self._classic_palette(len(multi))
 				   if getattr(self, "classic", False) else self._palette(len(multi)))
 		color = {}
@@ -85,8 +87,8 @@ class _FlaGsBase:
 			for acc in fam:
 				color[acc] = c
 		for fam in families:
-			if len(fam) == 1:
-				color[fam[0]] = self.GREY
+			for acc in fam:
+				color.setdefault(acc, self.GREY)
 		return color
 
 	@staticmethod
@@ -285,15 +287,9 @@ class OperonView(_FlaGsBase):
 
 			has_overlay = bool(self._dom or features.get(g.accession))
 			if has_overlay and not self.show_numbers:
-				# No fill: family_numbers FALSE means no family colouring, and the
-				# outline is redrawn over the wedges below anyway.
 				pass
 			elif has_overlay:
-				# Opaque but pastel: covers a secretion band underneath, and stays
-				# clear of the saturated domain wedges drawn on top.
 				pastel = self._pastel(fill)
-				# Outline matches the fill, except where it carries an accent --
-				# an RNA or query marker lightened to match would stop marking.
 				svg.append(self._gene_fill(
 					gx0, gx1, y, g.strand, pastel,
 					self._accent(g) or self._pastel_outline(fill), sw))
@@ -320,7 +316,6 @@ class OperonView(_FlaGsBase):
 					sw))
 				row_labels.extend(wlabels)
 			num = overlay["number"].get(g.accession) if self.show_numbers else None
-			# R and Q already say what the family is; G is only for plain numbers.
 			if num is not None and self._dom and num[:1].isdigit():
 				num = "G{}".format(num)
 			if num is not None:
@@ -520,7 +515,7 @@ class OperonView(_FlaGsBase):
 	def _gene_outline(self, x0, x1, cy, strand, stroke, sw):
 		points = " ".join("{:.1f},{:.1f}".format(px, py)
 						  for px, py in self._arrow_points(x0, x1, cy, strand))
-		return ('<polygon points="{}" fill="rgba(0,0,0,0)" stroke="{}" '
+		return ('<polygon points="{}" fill="none" stroke="{}" '
 				'stroke-width="{}"/>'.format(points, stroke, sw))
 
 	def _gene_fill(self, x0, x1, cy, strand, fill, stroke, sw, opacity=None):
@@ -543,8 +538,6 @@ class OperonView(_FlaGsBase):
 			return gx1 - frac * span if minus else gx0 + frac * span
 
 		wedges, labels = [], []
-		# N-to-C order: a wedge is thin at its start and tall at its end, so each
-		# new start covers only a sliver of the previous end and both stay visible.
 		for d in sorted(hits, key=lambda h: (h.start, h.end)):
 			s, e = res_to_x(d.start), res_to_x(d.end)
 			color = overlay["color"][d.name]
@@ -632,8 +625,6 @@ class OperonView(_FlaGsBase):
 		default = {"pseudo": self.PSEUDO[0], "rna": self.RNA[0],
 				   "other": self.OTHER[0]}.get(
 					   special, self.RNA[0] if gene.is_rna else self.GREY)
-		# A clustered RNA or pseudogene keeps its family colour; the accent ring
-		# carries what it is, so neither piece of information is lost.
 		fill = gene_color.get(gene.accession, default)
 		pale = (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0], self.OTHER[0])
 		outline = self.MIDGREY if fill in pale else fill
@@ -650,8 +641,6 @@ class OperonView(_FlaGsBase):
 		return self.MIDGREY if self._is_pale(fill) else self._pastel(fill)
 
 	def _pastel(self, fill):
-		"""Tint a family colour so wedges read on top. Genes with no family are
-		already pale, and lightening them again just erases them."""
 		return fill if self._is_pale(fill) else self._lighten(fill, self.PASTEL_FILL)
 
 	@staticmethod

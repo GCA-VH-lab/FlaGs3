@@ -398,7 +398,6 @@ class MgnifyGenomeDownloader(_GenomeDownloader):
 			debug("  genome keys: {}".format(sorted(payload)[:20]))
 		urls = self._url_map(payload)
 		if not urls:
-			# Some deployments only expose downloads on the sub-resource.
 			self.limiter.wait()
 			r = self.session.get(self.API_DOWNLOADS.format(assembly), timeout=30)
 			debug("MGnify downloads {} -> HTTP {}".format(assembly, r.status_code))
@@ -844,7 +843,9 @@ class ReportWriter:
 		self.row_sequences = row_sequences or {}
 		rna_accessions = {g.accession for g in neighborhoods if g.is_rna}
 		queries = {g.accession for g in neighborhoods if g.offset == 0}
-		self.fam_of = family_numbers(families, rna_accessions, queries)
+		self.occurrences = Counter(g.accession for g in neighborhoods)
+		self.fam_of = family_numbers(families, rna_accessions, queries,
+									 self.occurrences)
 		self.by_query = {}
 		for g in neighborhoods:
 			self.by_query.setdefault(g.query, []).append(g)
@@ -852,7 +853,6 @@ class ReportWriter:
 			rank = {row: i for i, row in enumerate(order)}
 			self.by_query = {row: self.by_query[row] for row in
 							 sorted(self.by_query, key=lambda r: rank.get(r, len(rank)))}
-		self.occurrences = Counter(g.accession for g in neighborhoods)
 		self.products = {}
 		for g in neighborhoods:
 			self.products.setdefault(g.accession, g.product)
@@ -892,11 +892,13 @@ class ReportWriter:
 		with open(path, "w") as out:
 			out.write("#family\tsize\tmembers\n")
 			for fam in self.families:
-				label = self.fam_of.get(fam[0], "-") if len(fam) > 1 else "-"
+				label = (self.fam_of.get(fam[0], "-")
+						 if family_shared(fam, self.occurrences) else "-")
 				out.write("{}\t{}\t{}\n".format(label, len(fam), ",".join(fam)))
 
 	def outdesc_txt(self, path):
-		blocks = [fam for fam in self.families if len(fam) >= 2]
+		blocks = [fam for fam in self.families
+				  if family_shared(fam, self.occurrences)]
 		blocks.sort(key=lambda fam: -sum(self.occurrences.get(a, 0) for a in fam))
 		with open(path, "w") as out:
 			for fam in blocks:
@@ -976,14 +978,22 @@ class ReportWriter:
 				out.write(line + "\n")
 		return len(lines)
 
-def family_numbers(families, rna_accessions=None, query_accessions=None):
+def family_shared(fam, occurrences=None):
+	if occurrences:
+		return sum(occurrences.get(acc, 0) for acc in fam) > 1
+	return len(fam) > 1
+
+
+def family_numbers(families, rna_accessions=None, query_accessions=None,
+				   occurrences=None):
 	rna_accessions = rna_accessions or set()
 	query_accessions = query_accessions or set()
 	number = {}
 	prot_n, rna_n, query_n = 0, 0, 0
-	for fam in families:
-		if len(fam) < 2:
-			continue
+	shared = [fam for fam in families if family_shared(fam, occurrences)]
+	if occurrences:
+		shared.sort(key=lambda fam: -sum(occurrences.get(a, 0) for a in fam))
+	for fam in shared:
 		if fam[0] in rna_accessions:
 			rna_n += 1
 			label = "R{}".format(rna_n)
@@ -998,7 +1008,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None):
 	return number
 
 
-VERSION = "1.0.2"
+VERSION = "1.0.5"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1394,7 +1404,8 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 					families=family_numbers(
 						families,
 						{g.accession for g in all_neighborhoods if g.is_rna},
-						{g.accession for g in all_neighborhoods if g.offset == 0}))
+						{g.accession for g in all_neighborhoods if g.offset == 0},
+						Counter(g.accession for g in all_neighborhoods)))
 				domain_table_written = True
 			except Exception as e:
 				print("Warning: could not write the domain table ({}).".format(e))

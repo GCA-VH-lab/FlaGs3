@@ -30,6 +30,9 @@ flag:
 |---|---|
 | `-t`, `--tree`, `--tree_order` | `mafft` and `VeryFastTree` on `PATH` |
 | `--blast_mode local` | `blastp` from NCBI BLAST+ on `PATH`, and a local protein database |
+| `-tm`, `--trimal_mode` | `gt` | trimal column filter: `gt`, `cons`, `st`, or a preset (`gappyout`, `strict`, `strictplus`, `automated1`, `nogaps`, `noallgaps`). |
+| `-tv`, `--trimal_value` | `0.1` | Value for the modes that take one. |
+| `-tx`, `--trimal_extra` | — | Extra trimal arguments passed through verbatim. |
 | `-iq`, `--iqtree` | `mafft` and `iqtree` on `PATH` |
 | `-d`, `--domains` | an HMM database — run `pfamA_loader.sh` to fetch Pfam-A |
 | `-th`, `--tmhmm`, `--signalp` | `pip install pybiolib` and a network connection |
@@ -172,6 +175,9 @@ feature, and completes the rest of the run.
 | Option | Needs | Description |
 |---|---|---|
 | `-t`, `--tree` | mafft, VeryFastTree | Also build a phylogenetic tree with the neighbourhoods aligned to its leaves (`_tree.svg`, `_tree.nwk`, `_tree.aln`). Does not change the main figure. |
+| `-tm`, `--trimal_mode` | `gt` | trimal column filter: `gt`, `cons`, `st`, or a preset (`gappyout`, `strict`, `strictplus`, `automated1`, `nogaps`, `noallgaps`). |
+| `-tv`, `--trimal_value` | `0.1` | Value for the modes that take one. |
+| `-tx`, `--trimal_extra` | — | Extra trimal arguments passed through verbatim. |
 | `-iq`, `--iqtree` | mafft, iqtree | Build the tree with IQ-TREE instead of VeryFastTree: ModelFinder picks the substitution model and 1000 ultrafast bootstrap replicates give branch support. Implies `--tree`. Far slower, so use it for the final figure rather than while exploring. |
 | `--tree_order` | mafft, VeryFastTree | Order rows by tree leaf order, in the main figure and in `_operon.tsv`. Implies `--tree`. |
 | `-d`, `--domains` | `-db` | Scan flanking proteins for domains and write `_domains.tsv`. Figures using them are controlled by the figure table. |
@@ -305,10 +311,17 @@ Each row produces `<prefix>_<name>.svg`. Any numeric cell may be `default`.
 | `mode` | `versatile` (the current look), `triangles` (fixed-width genes beside a tree), or `classic` (original FlaGs3: tighter rows, blunter arrows, numbers inside them, query protein solid black). |
 | `tree_width` | `False` for no tree, otherwise a multiplier on the default panel width. Works in **every** mode, not just `triangles`. |
 | `features_allowed` | Comma-separated: `cluster_rna`, `domains`, `tmhmm`, `signalp`, `sismis`, `monochrome`, `none`. `monochrome` turns off family colouring. Tokens compose: `sismis` only adds secretion bands, `domains` only adds domain wedges, and family colours and numbers stay unless you ask for `monochrome` or `family_numbers FALSE`. |
-| `family_numbers` | `TRUE`/`FALSE` — show family number labels and family colouring. They still appear when domains or secretion bands are drawn; under domain wedges the fill fades so both read. `FALSE` leaves genes as bare outlines when wedges are drawn, so the domains alone carry the colour. Domain and secretion numbers are unaffected either way. |
+| `family_numbers` | `TRUE`/`FALSE` — show family number labels and family colouring. They still appear when domains or secretion bands are drawn; family numbers are prefixed `G` on figures that also draw domains, so they are not confused with domain numbers; only plain family numbers take it, since `Q` and `R` already say what the family is. Under domain wedges the gene is filled in a pastel tint of its family colour, opaque so it hides any secretion band beneath and stays clear of the wedges on top, with the outline in the same tint. RNA, pseudogene and query outlines keep their full-strength accent. `FALSE` leaves genes as bare outlines when wedges are drawn, so the domains alone carry the colour. Domain and secretion numbers are unaffected either way. |
 | `font_size`, `row_height`, `gene_height`, `gene_gap`, `pad` | Type and layout sizes in px. |
 | `bases_per_pixel` | Genomic scale. `False` gives fixed-width genes. |
-| `domain_height`, `label_step`, `arrow_head`, `min_gene_width`, `band_opacity` | Domain wedge height, label spacing, classic arrow head length, smallest arrow width, secretion band opacity. |
+| `domain_height`, `label_step`, `arrow_head`, `min_gene_width`, `band_opacity` | Domain wedge height, label spacing, classic arrow head length, smallest arrow width, secretion band opacity. Band height follows `gene_height`; the type label sits to the right of the row in black at 85% of `font_size`. |
+
+A gene that is more than one thing shows both: the fill gives the family, and the
+outline gives the rest — green for RNA, navy for a pseudogene, black for a query
+protein. A gene that is only its family is outlined in its own colour, and an
+unclustered one in mid grey. RNA genes, pseudogenes and queries also get a
+double-weight outline. So a clustered RNA gene keeps its family colour instead of
+losing it to the RNA styling.
 
 Every figure carries a legend for whatever it actually draws: domains, secretion
 systems, transmembrane helices and signal peptides, the query protein, RNA genes
@@ -340,7 +353,7 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_neighbors.svg` | the main diagram: one row per query, genes as arrows coloured by family |
 | `results_tree.svg` | same rows aligned to a phylogenetic tree (`--tree`) |
 | `results_tree.nwk` | the tree in Newick format |
-| `results_tree.aln` | the trimmed alignment the tree was built from |
+| `tree/` | the alignment, the trimmed alignment, the Newick tree and the exact alignment/trimming/tree commands used |
 | `results_domains.svg` | neighbourhoods with domains, TM regions and signal peptides drawn on |
 | `results_secretion.svg` | neighbourhoods with predicted secretion systems marked (`--sismis`) |
 

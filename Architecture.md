@@ -237,13 +237,28 @@ Python fallback needing no system cairo. Both were checked against real figures
 for clip paths and fill opacity, which the domain and secretion overlays depend
 on. A missing backend warns and leaves the SVGs, like every other optional tool.
 
+### Fill and outline carry different facts
+
+A gene can be both clustered and something else. The fill always carries the
+family; the outline carries whatever else the gene is -- RNA, pseudogene or query
+-- and falls back to the fill's own colour, or mid grey when there is no family.
+`_gene_style` used to return early for RNA and pseudogenes, which discarded the
+family colour entirely. Stroke width doubles for RNA genes, pseudogenes and
+queries, but it only emphasises what the outline colour already says -- it is not
+the sole carrier of anything.
+
 ### Overlays compose
 
 `OperonView` draws family colour, family numbers, domain wedges, protein features
 and secretion bands as independent layers rather than choosing one. It used to
 pick a single exclusive `mode`, so `sismis` silently suppressed domains and
-colouring, and `domains` suppressed family numbers. The gene fill is drawn at
-`OVERLAY_FILL` opacity when wedges sit on top, so both read. Legends stack: one
+colouring, and `domains` suppressed family numbers. The gene fill is an opaque pastel tint of the family colour when wedges sit on
+top: opaque so a secretion band underneath is covered rather than showing
+through, and light so it does not compete with the saturated wedges. The outline
+takes the same tint, except on a gene whose outline carries an accent -- an RNA,
+pseudogene or query marker lightened to match would stop marking anything. Domain
+wedges are drawn N-to-C along the gene as displayed; a wedge is thin at its start
+and tall at its end, so each new start hides only a sliver of the previous end. Legends stack: one
 panel per overlay actually present.
 
 The standard figure set lives in `visualisation_table.tsv` beside the code, not in

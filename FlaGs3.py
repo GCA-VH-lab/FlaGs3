@@ -39,7 +39,7 @@ class AccessionListReader:
 		for path in self.paths:
 			with open(path, 'r') as f:
 				for n, line in enumerate(f, 1):
-					line = line.strip()
+					line = line.split('#', 1)[0].strip()
 					if not line:
 						continue
 					if '\t' in line:
@@ -843,7 +843,8 @@ class ReportWriter:
 		self.sequences = sequences or {}
 		self.row_sequences = row_sequences or {}
 		rna_accessions = {g.accession for g in neighborhoods if g.is_rna}
-		self.fam_of = family_numbers(families, rna_accessions)
+		queries = {g.accession for g in neighborhoods if g.offset == 0}
+		self.fam_of = family_numbers(families, rna_accessions, queries)
 		self.by_query = {}
 		for g in neighborhoods:
 			self.by_query.setdefault(g.query, []).append(g)
@@ -975,16 +976,20 @@ class ReportWriter:
 				out.write(line + "\n")
 		return len(lines)
 
-def family_numbers(families, rna_accessions=None):
+def family_numbers(families, rna_accessions=None, query_accessions=None):
 	rna_accessions = rna_accessions or set()
+	query_accessions = query_accessions or set()
 	number = {}
-	prot_n, rna_n = 0, 0
+	prot_n, rna_n, query_n = 0, 0, 0
 	for fam in families:
 		if len(fam) < 2:
 			continue
 		if fam[0] in rna_accessions:
 			rna_n += 1
 			label = "R{}".format(rna_n)
+		elif query_accessions.intersection(fam):
+			query_n += 1
+			label = "Q{}".format(query_n)
 		else:
 			prot_n += 1
 			label = str(prot_n)
@@ -993,7 +998,7 @@ def family_numbers(families, rna_accessions=None):
 	return number
 
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1159,6 +1164,9 @@ def build_parser():
 	parser.add_argument("-o", "--output", default="output", help=" Directory for result files; its name is also the file prefix. A YYYYMMDD_HHMMSS stamp of the run start is appended, so repeated runs do not overwrite each other. Default = output ")
 	parser.add_argument("-nt", "--no_timestamp", action="store_true", help=" Use -O/--output verbatim instead of appending a date-time stamp. Repeated runs then overwrite each other; useful for scripted pipelines that need a fixed path. ")
 	parser.add_argument("-t", "--tree", action="store_true", help=" Also build a phylogenetic tree and write it as <dir>_tree.nwk. Figures that use it are controlled by the figure table. ")
+	parser.add_argument("-tm", "--trimal_mode", default="gt", help=" trimal column-filter mode: gt, cons, st, or a preset such as gappyout, strict, strictplus, automated1, nogaps, noallgaps. Default = gt ")
+	parser.add_argument("-tv", "--trimal_value", type=float, default=0.1, help=" Value for the trimal mode that takes one (gt, cons, st). Default = 0.1 ")
+	parser.add_argument("-tx", "--trimal_extra", default="", help=" Extra trimal arguments, passed through verbatim, e.g. \"-w 3\". ")
 	parser.add_argument("-iq", "--iqtree", action="store_true", help=" Build the tree with IQ-TREE (ModelFinder plus 1000 ultrafast bootstrap replicates) instead of VeryFastTree. Implies --tree. Much slower but gives model selection and branch support. Needs iqtree on PATH. ")
 	parser.add_argument("-to", "--tree_order", action="store_true", help=" Order the neighbours output by tree leaf order (implies --tree). ")
 	parser.add_argument("-d", "--domains", action="store_true", help=" Scan flanking proteins for domains and write <dir>_domains.tsv (requires --hmmdb). ")
@@ -1383,8 +1391,10 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 				dom_mod.DomainScanner.write_report(
 					domains, out_path("_domains.tsv"), clans=clan_map,
 					interpro=interpro,
-					families=family_numbers(families,
-											{g.accession for g in all_neighborhoods if g.is_rna}))
+					families=family_numbers(
+						families,
+						{g.accession for g in all_neighborhoods if g.is_rna},
+						{g.accession for g in all_neighborhoods if g.offset == 0}))
 				domain_table_written = True
 			except Exception as e:
 				print("Warning: could not write the domain table ({}).".format(e))
@@ -1404,7 +1414,7 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 	for name in figures_written:
 		print("  {}".format(name))
 	if tree_written:
-		print("  {}_tree.nwk / {}_tree.aln".format(prefix, prefix))
+		print("  tree/ ({}_tree.nwk, alignments, commands)".format(prefix))
 	elif want_tree:
 		print("  (tree skipped: fewer than 3 query sequences)")
 	if domain_table_written:
@@ -1681,7 +1691,9 @@ def main():
 		import flags_tree as tree_mod
 		builder = tree_mod.TreeBuilder(
 			threads=args.cpu or 0,
-			engine="iqtree" if args.iqtree else "veryfasttree")
+			engine="iqtree" if args.iqtree else "veryfasttree",
+			trimal_mode=args.trimal_mode, trimal_value=args.trimal_value,
+			trimal_extra=args.trimal_extra)
 		newick, _ = builder.build(extractor.row_sequences)
 		if newick:
 			leaf_order = tree_mod.ladderized_leaf_order(newick)
@@ -1699,12 +1711,26 @@ def main():
 	order = leaf_order if args.tree_order else None
 	tree_written = False
 	if newick:
-		with open(out_path("_tree.nwk"), "w") as out:
+		tree_dir = os.path.join(args.output, "tree")
+		os.makedirs(tree_dir, exist_ok=True)
+		tree_path = lambda suffix: os.path.join(tree_dir, prefix + suffix)
+		with open(tree_path("_tree.nwk"), "w") as out:
 			out.write(newick + "\n")
-		if builder and builder.alignment:
-			with open(out_path("_tree.aln"), "w") as out:
-				for name, seq in builder.alignment.items():
-					out.write(">{}\n{}\n".format(name, seq))
+		if builder:
+			for suffix, aln in (("_alignment.aln", builder.raw_alignment),
+								("_trimmed.aln", builder.alignment)):
+				if not aln:
+					continue
+				with open(tree_path(suffix), "w") as out:
+					for name, seq in aln.items():
+						out.write(">{}\n{}\n".format(name, seq))
+			if builder.commands:
+				with open(tree_path("_commands.txt"), "w") as out:
+					out.write("\n".join(builder.commands) + "\n")
+				with open(out_path("_runinfo.txt"), "a") as out:
+					out.write("\ntree commands\n")
+					for c in builder.commands:
+						out.write("  {}\n".format(c))
 		tree_written = True
 	timings["6b_tree_files"] = time.perf_counter() - t0; t0 = time.perf_counter()
 	want_domain_fig = args.domains or features

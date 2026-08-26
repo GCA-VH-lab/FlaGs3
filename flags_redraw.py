@@ -296,7 +296,9 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 				probability=float(row.get("probability") or 0.0)))
 
 	newick, order = "", None
-	tree_path = path("_tree.nwk")
+	tree_path = os.path.join(directory, "tree", prefix + "_tree.nwk")
+	if not os.path.isfile(tree_path):
+		tree_path = path("_tree.nwk")
 	if os.path.isfile(tree_path):
 		with open(tree_path) as fh:
 			newick = fh.read().strip()

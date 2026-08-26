@@ -68,6 +68,9 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.0.2** — trimal settings for alignment trimming, tree files in a `tree/` subfolder,
+and figure styling closer to the original FlaGs
+
 **1.0.1** — PDF output alongside every figure
 
 **1.0.0** — First FlaGs3 release

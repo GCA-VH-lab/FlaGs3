@@ -12,5 +12,6 @@ dependencies:
   - mafft>=7.0
   - veryfasttree>=4.0
   - iqtree>=2.2
+  - trimal>=1.4
   - cairosvg>=2.7
   - pybiolib>=1.1.862

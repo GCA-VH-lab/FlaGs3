@@ -66,11 +66,20 @@ class _FlaGsBase:
 				int(r * 255), int(g * 255), int(b * 255)))
 		return colors
 
+	@staticmethod
+	def _classic_palette(n: int) -> List[str]:
+		"""FlaGs2's random_color(): 20 hues on a 5-step grid, L=0.5, S=0.5."""
+		hues = [int(h * 3.6) / 100.0 for h in range(0, 100, 5)]
+		return ["#%02x%02x%02x" % tuple(int(f * 255) for f in
+									    colorsys.hls_to_rgb(hues[i % len(hues)], 0.5, 0.5))
+				for i in range(n)]
+
 	def _family_colors(self, families: List[List[str]]) -> Dict[str, str]:
 		if getattr(self, "monochrome", False):
 			return {acc: self.GREY for fam in families for acc in fam}
 		multi = [fam for fam in families if len(fam) > 1]
-		palette = self._palette(len(multi))
+		palette = (self._classic_palette(len(multi))
+				   if getattr(self, "classic", False) else self._palette(len(multi)))
 		color = {}
 		for fam, c in zip(multi, palette):
 			for acc in fam:
@@ -145,8 +154,8 @@ class _FlaGsBase:
 class OperonView(_FlaGsBase):
 	LABEL_STEP = 12   
 	SECRETION_BAND_OPACITY = 0.28   
-	SECRETION_BAND_PAD = 4          
-	OVERLAY_FILL = 0.45
+	SECRETION_BAND_PAD = 2          
+	SECRETION_LABEL_SCALE = 0.85
 
 	CLASSIC = {"row_h": 20, "gene_h": 15, "font": 12, "head": 7, "min_w": 13}
 
@@ -256,7 +265,8 @@ class OperonView(_FlaGsBase):
 					y, row_lo, row_hi)
 				if band:
 					svg.append(band)
-					row_labels.append((mid, h.type, "#000"))
+					self._sec_labels.setdefault(q, []).append(
+						(h.type, self._sec["color"][h.type]))
 
 		for g in by_query[q]:
 			if reversed_row:
@@ -270,16 +280,25 @@ class OperonView(_FlaGsBase):
 			drawn = g.strand if not reversed_row else drawn
 
 			fill, outline = self._gene_style(g, gene_color)
-			stroke = "#000" if g.offset == 0 else outline
-			sw = 2 if g.offset == 0 else 1
+			stroke = outline
+			sw = self._stroke_width(g)
 
 			has_overlay = bool(self._dom or features.get(g.accession))
 			if has_overlay and not self.show_numbers:
-				svg.append(self._gene_outline(gx0, gx1, y, g.strand, stroke, sw))
-			else:
+				# No fill: family_numbers FALSE means no family colouring, and the
+				# outline is redrawn over the wedges below anyway.
+				pass
+			elif has_overlay:
+				# Opaque but pastel: covers a secretion band underneath, and stays
+				# clear of the saturated domain wedges drawn on top.
+				pastel = self._pastel(fill)
+				# Outline matches the fill, except where it carries an accent --
+				# an RNA or query marker lightened to match would stop marking.
 				svg.append(self._gene_fill(
-					gx0, gx1, y, g.strand, fill, stroke, sw,
-					opacity=self.OVERLAY_FILL if has_overlay else None))
+					gx0, gx1, y, g.strand, pastel,
+					self._accent(g) or self._pastel_outline(fill), sw))
+			else:
+				svg.append(self._gene_fill(gx0, gx1, y, g.strand, fill, stroke, sw))
 			if has_overlay:
 				wedges, wlabels = self._domains_on_gene(
 					g, gx0, gx1, y, g.strand, (domains or {}).get(g.accession, []),
@@ -294,9 +313,16 @@ class OperonView(_FlaGsBase):
 					svg.append('<clipPath id="{}"><polygon points="{}"/></clipPath>'.format(
 						clip_id, clip_pts))
 					svg.append('<g clip-path="url(#{})">{}</g>'.format(clip_id, overlay_svg))
-				svg.append(self._gene_outline(gx0, gx1, y, g.strand, stroke, sw))
+				svg.append(self._gene_outline(
+					gx0, gx1, y, g.strand,
+					self._accent(g) or (self._pastel_outline(fill)
+										if self.show_numbers else self.MIDGREY),
+					sw))
 				row_labels.extend(wlabels)
 			num = overlay["number"].get(g.accession) if self.show_numbers else None
+			# R and Q already say what the family is; G is only for plain numbers.
+			if num is not None and self._dom and num[:1].isdigit():
+				num = "G{}".format(num)
 			if num is not None:
 				if self.classic:
 					svg.append(self._number_in_gene(gx0, gx1, y, num, fill))
@@ -338,7 +364,13 @@ class OperonView(_FlaGsBase):
 		gutter = self.tree_w if (self.tree_w and self.newick) else 0
 		center = self.pad + gutter + label_w - max_left
 		genes_right = center + max_right 
-		W = int(genes_right + self.pad)
+		sec_w = 0
+		if secretion:
+			label_size = max(7, int(self.font * self.SECRETION_LABEL_SCALE))
+			widest = max((self._text_width(h.type, label_size)
+						  for h in secretion), default=0)
+			sec_w = int(widest) + 14
+		W = int(genes_right + sec_w + self.pad)
 
 		drawn = self._drawn_elements(by_query, features)
 		panels = []
@@ -361,11 +393,25 @@ class OperonView(_FlaGsBase):
 			svg.extend(self._tree_gutter(rows, gutter))
 
 		self._clip_n = 0
+		self._sec_labels = {}
 		for i, q in enumerate(rows):
 			svg.extend(self._draw_row(
 				q, self.pad + i * self.row_h + self.row_h / 2, rows, by_query,
 				spans, row_reversed, center, gutter, labels_out, overlay,
 				gene_color, domains, features))
+
+		for i, q in enumerate(rows):
+			seen, x = set(), genes_right + 8
+			y = self.pad + i * self.row_h + self.row_h / 2
+			for kind, colour in self._sec_labels.get(q, []):
+				if kind in seen:
+					continue
+				seen.add(kind)
+				size = max(7, int(self.font * self.SECRETION_LABEL_SCALE))
+				svg.append('<text x="{:.1f}" y="{:.1f}" font-size="{}" '
+						   'fill="#000000">{}</text>'.format(
+							   x, y + size / 3, size, self._escape(kind)))
+				x += self._text_width(kind, size) + 6
 
 		ly = self.pad + len(rows) * self.row_h + 14 + scale_h
 		for title, items, cols, col_w, h in panels:
@@ -497,7 +543,9 @@ class OperonView(_FlaGsBase):
 			return gx1 - frac * span if minus else gx0 + frac * span
 
 		wedges, labels = [], []
-		for d in hits:
+		# N-to-C order: a wedge is thin at its start and tall at its end, so each
+		# new start covers only a sliver of the previous end and both stay visible.
+		for d in sorted(hits, key=lambda h: (h.start, h.end)):
 			s, e = res_to_x(d.start), res_to_x(d.end)
 			color = overlay["color"][d.name]
 			pts = [(s, cy + 2 * u), (s, cy + 1 * u), (e, cy - 2 * u),
@@ -575,19 +623,62 @@ class OperonView(_FlaGsBase):
 						   lx, ly, self.font - 4, col, num))
 		return "".join(out)
 
+	MIDGREY = "#bebebe"
+
 	def _gene_style(self, gene, gene_color):
 		if self.classic and gene.offset == 0:
 			return "#000000", "#000000"
 		special = self._special_type(gene.accession)
+		default = {"pseudo": self.PSEUDO[0], "rna": self.RNA[0],
+				   "other": self.OTHER[0]}.get(
+					   special, self.RNA[0] if gene.is_rna else self.GREY)
+		# A clustered RNA or pseudogene keeps its family colour; the accent ring
+		# carries what it is, so neither piece of information is lost.
+		fill = gene_color.get(gene.accession, default)
+		pale = (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0], self.OTHER[0])
+		outline = self.MIDGREY if fill in pale else fill
+		return fill, (self._accent(gene) or outline)
+
+	QUERY_ACCENT = "#000000"
+	PASTEL_FILL = 0.62
+
+	def _is_pale(self, fill):
+		return fill in (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0],
+						self.OTHER[0])
+
+	def _pastel_outline(self, fill):
+		return self.MIDGREY if self._is_pale(fill) else self._pastel(fill)
+
+	def _pastel(self, fill):
+		"""Tint a family colour so wedges read on top. Genes with no family are
+		already pale, and lightening them again just erases them."""
+		return fill if self._is_pale(fill) else self._lighten(fill, self.PASTEL_FILL)
+
+	@staticmethod
+	def _lighten(colour, amount):
+		"""Blend a hex colour towards white. amount 0 = unchanged, 1 = white."""
+		try:
+			r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+		except (ValueError, IndexError):
+			return colour
+		mix = lambda c: int(round(c + (255 - c) * amount))
+		return "#{:02x}{:02x}{:02x}".format(mix(r), mix(g), mix(b))
+
+	def _stroke_width(self, gene):
+		if self._special_type(gene.accession) in ("rna", "pseudo") or gene.is_rna:
+			return 2
+		return 2 if gene.offset == 0 else 1
+
+	def _accent(self, gene):
+		"""Outer ring colour for a gene that is more than just its family."""
+		special = self._special_type(gene.accession)
 		if special == "pseudo":
-			return self.PSEUDO
-		if special == "rna":
-			return self.RNA
-		if special == "other":
-			return self.OTHER
-		outline = self.RNA[1] if gene.is_rna else "#333"
-		fill = gene_color.get(gene.accession, self.RNA[0] if gene.is_rna else self.GREY)
-		return fill, outline
+			return self.PSEUDO[1]
+		if special == "rna" or gene.is_rna:
+			return self.RNA[1]
+		if gene.offset == 0:
+			return self.QUERY_ACCENT
+		return None
 
 	def _extra_legend(self, drawn):
 		blocks = []
@@ -757,8 +848,8 @@ class NeighborhoodVisualizer(_FlaGsBase):
       for g in by_query[q]:
         cx = center + g.offset * cell
         fill, outline = self._style_for(g.accession, color, g.is_rna)
-        stroke = "#000" if g.offset == 0 else outline
-        sw = 2 if g.offset == 0 else 1
+        stroke = outline
+        sw = self._stroke_width(g)
         svg.append(self._arrow(cx, y, g.strand, fill, stroke, sw,
           number.get(g.accession)))
 

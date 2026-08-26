@@ -29,11 +29,27 @@ class TreeBuilder:
     return result
 
   def __init__(self, threads: int = 0, engine: str = "veryfasttree",
-      gap_threshold: float = 0.1):
+      trimal_mode: str = "gt", trimal_value: float = 0.1,
+      trimal_extra: str = ""):
     self.threads = threads
     self.engine = engine
-    self.gap_threshold = gap_threshold
+    self.trimal_mode = trimal_mode
+    self.trimal_value = trimal_value
+    self.trimal_extra = trimal_extra
     self.alignment: Dict[str, str] = {}
+    self.raw_alignment: Dict[str, str] = {}
+    self.commands: List[str] = []
+
+  def _trimal_cmd(self, src, dst):
+    cmd = ["trimal", "-in", src, "-out", dst, "-fasta"]
+    mode = (self.trimal_mode or "gt").lstrip("-")
+    if mode in ("gappyout", "strict", "strictplus", "automated1", "nogaps", "noallgaps"):
+      cmd.append("-" + mode)
+    else:
+      cmd += ["-" + mode, str(self.trimal_value)]
+    if self.trimal_extra:
+      cmd += self.trimal_extra.split()
+    return cmd
 
   def build(self, sequences: Dict[str, str]) -> Tuple[str, List[str]]:
     names = list(sequences)
@@ -54,21 +70,31 @@ class TreeBuilder:
           check=True, stdout=out, stderr=subprocess.DEVNULL)
 
         raw = self._read_alignment(aln)
-        self.alignment = self._trim(raw, self.gap_threshold)
-        if raw:
-          self._debug("alignment {} cols -> {} after trimming at gt={}".format(
-            len(next(iter(raw.values()))),
-            len(next(iter(self.alignment.values()))), self.gap_threshold))
+        self.raw_alignment = raw
         trimmed = os.path.join(tmp, "q.trimmed.aln")
-        with open(trimmed, "w") as out:
-          for name, seq in self.alignment.items():
-            out.write(">{}\n{}\n".format(name, seq))
+        cmd = self._trimal_cmd(aln, trimmed)
+        if shutil.which("trimal"):
+          self._run(cmd, check=True, capture_output=True, text=True)
+          self.commands.append(" ".join(cmd))
+          self.alignment = self._read_alignment(trimmed)
+        else:
+          print("Warning: trimal not found on PATH; using the untrimmed "
+                "alignment.")
+          self.alignment = raw
+          with open(trimmed, "w") as out:
+            for name, seq in raw.items():
+              out.write(">{}\n{}\n".format(name, seq))
+        if raw and self.alignment:
+          self._debug("alignment {} cols -> {} after trimal".format(
+            len(next(iter(raw.values()))), len(next(iter(self.alignment.values())))))
 
         if self.engine == "iqtree":
           newick = self._run_iqtree(trimmed, tmp, len(names))
         else:
-          newick = self._run(["VeryFastTree", trimmed],
-            check=True, capture_output=True, text=True).stdout.strip()
+          vft = ["VeryFastTree", trimmed]
+          newick = self._run(vft, check=True, capture_output=True,
+                             text=True).stdout.strip()
+          self.commands.append(" ".join(vft))
     except FileNotFoundError as e:
       print("Warning: tree building needs mafft and {} on PATH; skipping the tree "
             "({}).".format("iqtree" if self.engine == "iqtree" else "VeryFastTree", e))
@@ -90,6 +116,7 @@ class TreeBuilder:
     if n_taxa >= 4:
       cmd += ["-B", "1000"]   # ultrafast bootstrap needs at least 4 taxa
     self._run(cmd, check=True, capture_output=True, text=True)
+    self.commands.append(" ".join(cmd))
     with open(os.path.join(tmp, "iq.treefile")) as fh:
       return fh.read().strip()
 
@@ -97,7 +124,6 @@ class TreeBuilder:
   def _read_alignment(path: str) -> Dict[str, str]:
     return {rec.id: str(rec.seq) for rec in SeqIO.parse(path, "fasta")}
 
-  @classmethod
   def _trim(cls, alignment: Dict[str, str], gap_threshold: float) -> Dict[str, str]:
     rows = list(alignment.values())
     if not rows:

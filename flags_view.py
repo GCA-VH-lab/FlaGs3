@@ -149,6 +149,63 @@ class _FlaGsBase:
 	      ).format(x, y, x + w, y - 3, y + 3, x + w / 2, y + self.font + 2,
 	        self.font - 1, nice)
 
+	@property
+	def classic(self) -> bool:
+		return getattr(self, "style", "") == "classic"
+
+	def _gene_style(self, gene, gene_color):
+		if self.classic and gene.offset == 0:
+			return "#000000", "#000000"
+		special = self._special_type(gene.accession)
+		default = {"pseudo": self.PSEUDO[0], "rna": self.RNA[0],
+				   "other": self.OTHER[0]}.get(
+					   special, self.RNA[0] if gene.is_rna else self.GREY)
+		fill = gene_color.get(gene.accession, default)
+		if self.classic and fill == self.GREY:
+			fill = "#ffffff"
+		pale = (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0], self.OTHER[0])
+		outline = self.MIDGREY if fill in pale else fill
+		return fill, (self._accent(gene) or outline)
+
+	QUERY_ACCENT = "#000000"
+	PASTEL_FILL = 0.62
+
+	def _is_pale(self, fill):
+		return fill in (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0],
+						self.OTHER[0])
+
+	def _pastel_outline(self, fill):
+		return self.MIDGREY if self._is_pale(fill) else self._pastel(fill)
+
+	def _pastel(self, fill):
+		return fill if self._is_pale(fill) else self._lighten(fill, self.PASTEL_FILL)
+
+	@staticmethod
+	def _lighten(colour, amount):
+		"""Blend a hex colour towards white. amount 0 = unchanged, 1 = white."""
+		try:
+			r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+		except (ValueError, IndexError):
+			return colour
+		mix = lambda c: int(round(c + (255 - c) * amount))
+		return "#{:02x}{:02x}{:02x}".format(mix(r), mix(g), mix(b))
+
+	def _stroke_width(self, gene):
+		if self._special_type(gene.accession) in ("rna", "pseudo") or gene.is_rna:
+			return 2
+		return 2 if gene.offset == 0 else 1
+
+	def _accent(self, gene):
+		"""Outer ring colour for a gene that is more than just its family."""
+		special = self._special_type(gene.accession)
+		if special == "pseudo":
+			return self.PSEUDO[1]
+		if special == "rna" or gene.is_rna:
+			return self.RNA[1]
+		if gene.offset == 0:
+			return self.QUERY_ACCENT
+		return None
+
 	def _numbers_for(self, families, rna_accessions):
 		return dict(getattr(self, "numbers", None) or {})
 
@@ -182,10 +239,6 @@ class OperonView(_FlaGsBase):
 		self.show_numbers = show_numbers
 		self.tree_w = 0          # set per figure; 0 means no tree gutter
 		self.newick = ""
-
-	@property
-	def classic(self) -> bool:
-		return self.style == "classic"
 
 	def _row_spans(self, rows, by_query):
 		spans = {}
@@ -617,59 +670,6 @@ class OperonView(_FlaGsBase):
 		return "".join(out)
 
 	MIDGREY = "#bebebe"
-
-	def _gene_style(self, gene, gene_color):
-		if self.classic and gene.offset == 0:
-			return "#000000", "#000000"
-		special = self._special_type(gene.accession)
-		default = {"pseudo": self.PSEUDO[0], "rna": self.RNA[0],
-				   "other": self.OTHER[0]}.get(
-					   special, self.RNA[0] if gene.is_rna else self.GREY)
-		fill = gene_color.get(gene.accession, default)
-		if self.classic and fill == self.GREY:
-			fill = "#ffffff"
-		pale = (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0], self.OTHER[0])
-		outline = self.MIDGREY if fill in pale else fill
-		return fill, (self._accent(gene) or outline)
-
-	QUERY_ACCENT = "#000000"
-	PASTEL_FILL = 0.62
-
-	def _is_pale(self, fill):
-		return fill in (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0],
-						self.OTHER[0])
-
-	def _pastel_outline(self, fill):
-		return self.MIDGREY if self._is_pale(fill) else self._pastel(fill)
-
-	def _pastel(self, fill):
-		return fill if self._is_pale(fill) else self._lighten(fill, self.PASTEL_FILL)
-
-	@staticmethod
-	def _lighten(colour, amount):
-		"""Blend a hex colour towards white. amount 0 = unchanged, 1 = white."""
-		try:
-			r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
-		except (ValueError, IndexError):
-			return colour
-		mix = lambda c: int(round(c + (255 - c) * amount))
-		return "#{:02x}{:02x}{:02x}".format(mix(r), mix(g), mix(b))
-
-	def _stroke_width(self, gene):
-		if self._special_type(gene.accession) in ("rna", "pseudo") or gene.is_rna:
-			return 2
-		return 2 if gene.offset == 0 else 1
-
-	def _accent(self, gene):
-		"""Outer ring colour for a gene that is more than just its family."""
-		special = self._special_type(gene.accession)
-		if special == "pseudo":
-			return self.PSEUDO[1]
-		if special == "rna" or gene.is_rna:
-			return self.RNA[1]
-		if gene.offset == 0:
-			return self.QUERY_ACCENT
-		return None
 
 	def _extra_legend(self, drawn):
 		blocks = []

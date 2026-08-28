@@ -1014,7 +1014,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 

@@ -270,6 +270,14 @@ outline into a filled black arrow and hid the whole domain figure. Transparent
 fills are `fill="none"`, and translucency uses the `fill-opacity` attribute, which
 is part of SVG 1.1. Keep new colour values as hex or a colour keyword.
 
+### Where gene styling lives
+
+`_gene_style`, `_accent`, `_stroke_width`, the pastel helpers and the `classic`
+property all sit on `_FlaGsBase`, not on `OperonView`. Both renderers draw genes,
+so a helper added to one of them leaves the other raising `AttributeError` at
+render time -- which happened four times, each caught only when a figure silently
+failed to draw. Anything about how a gene looks belongs on the base class.
+
 ### Pseudogenes and annotation styles
 
 A pseudogene is flagged by `gene_biotype=pseudogene` on the gene row, but whether

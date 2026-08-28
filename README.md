@@ -68,6 +68,8 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.0.9** — the tree figure draws again, with the same gene styling as the others
+
 **1.0.8** — pseudogenes are recognised in every annotation style, and classic
 mode fills unclustered genes white
 

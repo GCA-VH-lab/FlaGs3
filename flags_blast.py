@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import shutil
 import subprocess
 import tempfile
@@ -79,10 +80,31 @@ def fetch_sequence(accession: str) -> str:
 	return str(record.seq)
 
 
+BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+POLL_SECONDS = 60
+MAX_WAIT_SECONDS = 3600
+
+
+def _qblast_info(text: str, key: str):
+	m = re.search(r"^\s*{}\s*=\s*(\S+)".format(key), text, re.M)
+	return m.group(1) if m else None
+
+
+def _human(seconds: float) -> str:
+	seconds = int(seconds)
+	if seconds < 60:
+		return "{}s".format(seconds)
+	return "{}m{:02d}s".format(seconds // 60, seconds % 60)
+
+
 class BlastSearcher:
 
 	def __init__(self, mode: str = "remote", database: str = "refseq_select",
-				 evalue: float = 1e-5, max_hits: int = 50, threads: int = 0):
+				 evalue: float = 1e-5, max_hits: int = 50, threads: int = 0,
+				 report=None, email: str = "", max_wait: float = MAX_WAIT_SECONDS):
+		self.report = report or (lambda msg: None)
+		self.email = email
+		self.max_wait = max_wait
 		self.mode = mode
 		self.database = DB_ALIASES.get(mode, {}).get(database, database)
 		self.evalue = evalue
@@ -106,8 +128,13 @@ class BlastSearcher:
 		import Bio.Blast as Blast
 		_debug("blast: remote qblast against {} (evalue {}, {} hits)".format(
 			self.database, self.evalue, self.max_hits))
-		stream = Blast.qblast("blastp", self.database, fasta,
-							  expect=self.evalue, hitlist_size=self.max_hits)
+		rid, rtoe = self._submit(fasta)
+		note = "NCBI job {}".format(rid)
+		if rtoe:
+			note += ", NCBI estimates {}".format(_human(rtoe))
+		self.report(note)
+		self.report("follow it at {}?CMD=Get&RID={}".format(BLAST_URL, rid))
+		stream = self._collect(rid, rtoe)
 		try:
 			record = Blast.read(stream)
 		finally:
@@ -124,6 +151,67 @@ class BlastSearcher:
 				bitscore=float(hsp.annotations.get("bit score", 0.0)) if hsp else 0.0,
 				description=(hit.target.description or "").strip()))
 		return hits
+
+	def _post(self, params: dict):
+		from urllib.parse import urlencode
+		from urllib.request import Request, urlopen
+		if self.email:
+			params.setdefault("email", self.email)
+		params.setdefault("tool", "FlaGs3")
+		req = Request(BLAST_URL, data=urlencode(params).encode(),
+					  headers={"User-Agent": "BiopythonClient"})
+		return urlopen(req, timeout=120)
+
+	def _submit(self, fasta: str):
+		params = {"CMD": "Put", "PROGRAM": "blastp",
+				  "DATABASE": self.database, "QUERY": fasta,
+				  "EXPECT": str(self.evalue),
+				  "HITLIST_SIZE": str(self.max_hits)}
+		_debug("blast: Put {}".format(
+			{k: v for k, v in params.items() if k != "QUERY"}))
+		with self._post(params) as resp:
+			text = resp.read().decode("utf-8", errors="replace")
+		rid = _qblast_info(text, "RID")
+		if not rid:
+			raise RuntimeError(
+				"NCBI did not return a job id; the database name {!r} may be "
+				"unknown to QBLAST".format(self.database))
+		try:
+			rtoe = float(_qblast_info(text, "RTOE") or 0)
+		except ValueError:
+			rtoe = 0.0
+		return rid, rtoe
+
+	def _collect(self, rid: str, rtoe: float):
+		from io import BytesIO
+		started = time.time()
+		time.sleep(min(max(rtoe, 5), POLL_SECONDS))
+		while True:
+			with self._post({"CMD": "Get", "RID": rid,
+							 "FORMAT_OBJECT": "SearchInfo"}) as resp:
+				text = resp.read().decode("utf-8", errors="replace")
+			status = _qblast_info(text, "Status") or "UNKNOWN"
+			waited = time.time() - started
+			_debug("blast: {} status={} after {}".format(rid, status, _human(waited)))
+			if status == "READY":
+				if _qblast_info(text, "ThereAreHits") == "no":
+					return BytesIO(b"")
+				break
+			if status == "FAILED":
+				raise RuntimeError(
+					"NCBI reports job {} failed. Check {}?CMD=Get&RID={}".format(
+						rid, BLAST_URL, rid))
+			if status == "UNKNOWN":
+				raise RuntimeError(
+					"NCBI no longer knows job {}; it expired or was rejected".format(rid))
+			if waited > self.max_wait:
+				raise TimeoutError(
+					"still queued at NCBI after {}. The job may yet finish -- see "
+					"{}?CMD=Get&RID={}".format(_human(waited), BLAST_URL, rid))
+			self.report("still waiting on NCBI, {} elapsed".format(_human(waited)))
+			time.sleep(POLL_SECONDS)
+		with self._post({"CMD": "Get", "RID": rid, "FORMAT_TYPE": "XML"}) as resp:
+			return BytesIO(resp.read())
 
 	def _local(self, fasta: str) -> List[BlastHit]:
 		binary = shutil.which("blastp")

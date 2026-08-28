@@ -626,6 +626,8 @@ class OperonView(_FlaGsBase):
 				   "other": self.OTHER[0]}.get(
 					   special, self.RNA[0] if gene.is_rna else self.GREY)
 		fill = gene_color.get(gene.accession, default)
+		if self.classic and fill == self.GREY:
+			fill = "#ffffff"
 		pale = (self.GREY, "#ffffff", self.PSEUDO[0], self.RNA[0], self.OTHER[0])
 		outline = self.MIDGREY if fill in pale else fill
 		return fill, (self._accent(gene) or outline)
@@ -720,7 +722,7 @@ class OperonView(_FlaGsBase):
 				x + 6, y, x, y + 10, x + 12, y + 10, color))
 		stroke = {"outline": "#000", "rna": self.RNA[1],
 				  "pseudo": self.PSEUDO[1]}.get(shape, "#333")
-		width = 2 if shape == "outline" else 1
+		width = 1 if shape == "swatch" else 2
 		return ('<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" '
 				'stroke-width="{}"/>'.format(x, y, color, stroke, width))
 

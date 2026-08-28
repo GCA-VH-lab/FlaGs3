@@ -274,7 +274,12 @@ The hits that were used are written to `_blast_hits.tsv` with their E-values and
 descriptions, and your starting file is copied to `_blast_input.txt`.
 
 **Remote versus local.** The default `--blast_mode remote` needs nothing installed
-but a QBLAST search takes minutes. `--blast_mode local` runs `blastp` from NCBI
+but a QBLAST search takes minutes, and much longer when NCBI is busy. FlaGs3 prints
+the job id and NCBI's own time estimate as soon as the job is accepted, then a
+progress line each minute while it waits, so a slow search is distinguishable from
+a hung one. The printed link opens the job on NCBI's site. `-bw`/`--blast_wait`
+caps the wait in minutes (default 60); giving up does not cancel the job, and the
+link stays valid. `--blast_mode local` runs `blastp` from NCBI
 BLAST+ against a local database and is far faster, but you need the binary and the
 database — `--blast_db` then takes the database name or path, and `-c/--cpu` sets
 `-num_threads`. An accession is resolved to its sequence through NCBI first, so

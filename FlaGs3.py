@@ -615,13 +615,17 @@ class NeighborhoodExtractor:
 					locus_tag = self._attr(attrs, "locus_tag") or ""
 					accession = self._cds_accession(attrs, locus_tag)
 					product = self._attr(attrs, "product") or ""
+					pseudo = (self._attr(attrs, "pseudo") or "").lower() == "true"
 					if genes and genes[-1]["accession"] is None:
-						genes[-1]["accession"] = accession
+						if pseudo or genes[-1]["biotype"] == "pseudogene":
+							genes[-1]["biotype"] = "pseudogene"
+						else:
+							genes[-1]["accession"] = accession
 						genes[-1]["product"] = product
 					else:
-
 						genes.append(self._record(col, accession, product,
-							biotype="protein_coding", locus_tag=locus_tag, is_rna=False))
+							biotype="pseudogene" if pseudo else "protein_coding",
+							locus_tag=locus_tag, is_rna=False))
 				elif feature.endswith("RNA"):
 
 					locus_tag = self._attr(attrs, "locus_tag") or ""
@@ -638,7 +642,9 @@ class NeighborhoodExtractor:
 						genes.append(self._record(col, accession, product,
 							biotype=feature, locus_tag=locus_tag, is_rna=True))
 		for g in genes:
-			if not g["accession"]:
+			if g["biotype"] == "pseudogene":
+				g["accession"] = "pseudogene*"
+			elif not g["accession"]:
 				g["accession"] = (g["biotype"] or "noProtein") + "*"
 
 		genes.sort(key=lambda g: (g["contig"], g["start"]))
@@ -1008,7 +1014,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.5"
+VERSION = "1.0.8"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1161,6 +1167,7 @@ def build_parser():
 	parser.add_argument("-bm", "--blast_mode", choices=("remote", "local"), default="remote", help=" Where to run BlastP. 'remote' uses NCBI QBLAST -- no install, but a search takes minutes. 'local' runs blastp from NCBI BLAST+ against a local database, which is far faster but needs the binary and the database. Default = remote ")
 	parser.add_argument("-bd", "--blast_db", default="refseq_select", help=" Database to search. Aliases: refseq_select (representative RefSeq proteins), refseq_protein (full RefSeq), genbank (nr), swissprot. Each resolves to the right name for the chosen mode. Any other value passes through unchanged, which is how a local database path is given. Default = refseq_select ")
 	parser.add_argument("-be", "--blast_evalue", type=float, default=1e-5, help=" E-value cutoff for BlastP. Default = 1e-5 ")
+	parser.add_argument("-bw", "--blast_wait", type=float, default=60, help=" Give up waiting on NCBI's queue after this many minutes. The job usually still finishes on NCBI's side and the printed link stays valid. Default = 60 ")
 	parser.add_argument("-bh", "--blast_hits", type=int, default=50, help=" How many BlastP hits to carry forward as queries. Each one becomes a genome download and a row in the figure, so this is the main control on how big the run gets. No upper limit, but webFlaGs caps at 200 and remote QBLAST may return fewer than asked. Default = 50 ")
 	parser.add_argument("-u", "--user_email", required=True, help=" User Email Address (required by NCBI Entrez). ")
 	parser.add_argument("-api", "--api_key", help=" NCBI API Key. ")
@@ -1331,6 +1338,9 @@ def resolve_blast(args, proteins_assembly, proteins_only, timings, t0):
 				args.blast_mode,
 				blast_query.accession or "the supplied sequence",
 				args.blast_db), flush=True)
+		if args.blast_mode == "remote":
+			print(">> waiting on NCBI's queue; this often takes several minutes "
+				  "and can be much longer when NCBI is busy.", flush=True)
 		Entrez.email = args.user_email
 		if args.api_key:
 			Entrez.api_key = args.api_key
@@ -1338,7 +1348,9 @@ def resolve_blast(args, proteins_assembly, proteins_only, timings, t0):
 			searcher = blast_mod.BlastSearcher(
 				mode=args.blast_mode, database=args.blast_db,
 				evalue=args.blast_evalue, max_hits=args.blast_hits,
-				threads=args.cpu or 0)
+				threads=args.cpu or 0, email=args.user_email,
+				max_wait=args.blast_wait * 60,
+				report=lambda msg: print(">> {}".format(msg), flush=True))
 			blast_hits = searcher.search(blast_query)
 		except Exception as e:
 			debug("blast failed", exc=True)

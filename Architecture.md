@@ -270,6 +270,21 @@ outline into a filled black arrow and hid the whole domain figure. Transparent
 fills are `fill="none"`, and translucency uses the `fill-opacity` attribute, which
 is part of SVG 1.1. Keep new colour values as hex or a colour keyword.
 
+### Pseudogenes and annotation styles
+
+A pseudogene is flagged by `gene_biotype=pseudogene` on the gene row, but whether
+it also has a CDS child varies by annotation: Salmonella's have none, so the gene
+kept a null accession and picked up the `pseudogene*` marker, while Bradyrhizobium's
+do, and the CDS overwrote the accession with its own id. The marker was then absent
+and the renderer had nothing to key the navy border on, so 381 pseudogenes in one
+genome drew as ordinary genes. The biotype now survives the CDS, and `pseudo=true`
+on a CDS is honoured too.
+
+Classic mode fills unclustered genes white rather than grey, matching the original
+FlaGs. The translation happens in `_gene_style` after the family lookup, because
+`_family_colors` assigns grey to every unlabelled accession, so a default only
+reached genes absent from that map.
+
 ### Overlays compose
 
 `OperonView` draws family colour, family numbers, domain wedges, protein features

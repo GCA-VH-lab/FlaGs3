@@ -68,6 +68,12 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.0.8** — pseudogenes are recognised in every annotation style, and classic
+mode fills unclustered genes white
+
+**1.0.7** — remote BlastP shows the NCBI job id and progress while it waits,
+not after
+
 **1.0.5** — conserved genes are coloured as well as numbered
 
 **1.0.4** — figures open correctly in Illustrator and other SVG 1.1 editors

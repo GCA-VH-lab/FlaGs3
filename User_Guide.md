@@ -244,7 +244,7 @@ python3 FlaGs3.py -i input.txt -u you@example.com -o run2 --use_local ./genomes
 
 Instead of writing out a list of homologues yourself, you can hand FlaGs3 a single
 starting point and let BlastP find them, the same way webFlaGs does. Put **one** of
-these in a file and pass it with `--blast_input`:
+these in a file and pass it with `-bi`/`--blast_input`:
 
 - a RefSeq protein accession (`WP_`, `NP_`, `YP_`, `XP_`, `AP_`), or
 - a protein sequence, as FASTA or as bare residues over any number of lines.
@@ -253,6 +253,20 @@ these in a file and pass it with `--blast_input`:
 echo "WP_047256880.1" > start.txt
 python3 FlaGs3.py --blast_input start.txt -u you@example.com -o run1
 ```
+
+You can also mark entries in the main input list: a line whose second column is
+`BLAST` is expanded instead of used directly, so a single file can mix ordinary
+accessions with things to expand.
+
+```
+WP_000028540.1	GCF_022493555.1
+WP_061892803.1
+WP_201476908.1	BLAST
+MKKATLARQLVDGT	BLAST
+```
+
+Every marked entry gets its own search and all the hits are pooled. `--blast_input`
+works exactly as before and can be combined with marked lines.
 
 The hits become the queries. They are appended to whatever `-i` holds, so you can
 mix a curated list with a BlastP expansion in one run; anything already in `-i` is

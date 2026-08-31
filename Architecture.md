@@ -353,6 +353,13 @@ and nothing says which figure gets the domain overlay.
 
 ### BlastP entry point
 
+BlastP queries arrive from two places -- `--blast_input` and lines in the main
+list whose second column is `BLAST` -- so `resolve_blast` takes a list of queries
+and one `BlastSearcher` serves all of them. `parse_query` works on lines rather
+than a path, which is what lets the same accession-or-sequence rules apply to a
+file and to an inline entry. A query with no hits warns and the run continues;
+only every query failing is fatal.
+
 `flags_blast.py` turns one accession or sequence into a query list, mirroring
 webFlaGs' two input boxes. `read_query` decides accession-vs-sequence by pattern
 rather than by asking the user which they supplied; anything that is neither

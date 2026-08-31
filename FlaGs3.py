@@ -34,8 +34,10 @@ class AccessionListReader:
 	def __init__(self, paths):
 		self.paths = [p for p in (paths or [])]
 
+	BLAST_MARK = "blast"
+
 	def read(self):
-		proteins_assembly, proteins_only = [], []
+		proteins_assembly, proteins_only, blast_queries = [], [], []
 		for path in self.paths:
 			with open(path, 'r') as f:
 				for n, line in enumerate(f, 1):
@@ -45,7 +47,10 @@ class AccessionListReader:
 					if '\t' in line:
 						fields = [c for c in line.split('\t') if c]
 						if len(fields) >= 2:
-							proteins_assembly.append([fields[0], fields[1]])
+							if fields[1].strip().lower() == self.BLAST_MARK:
+								blast_queries.append((fields[0], path, n))
+							else:
+								proteins_assembly.append([fields[0], fields[1]])
 						else:
 							print("Warning: line {} of {} is malformed, skipping it: "
 								  "{!r}".format(n, path, line))
@@ -54,7 +59,7 @@ class AccessionListReader:
 		seen = set()
 		proteins_only = [p for p in proteins_only
 						 if not (p in seen or seen.add(p))]
-		return proteins_assembly, proteins_only
+		return proteins_assembly, proteins_only, blast_queries
 
 
 class ProteinAssemblyMapper: 
@@ -1014,7 +1019,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.9"
+VERSION = "1.0.10"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1325,52 +1330,69 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 	return Scans(sismis_mod, sismis_hits, sismis_rows, sismis_statuses, features)
 
 
-def resolve_blast(args, proteins_assembly, proteins_only, timings, t0):
+def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
 	blast_hits, blast_query, blast_mod = [], None, None
+	if not args.blast_input and not inline:
+		return blast_hits, blast_query, blast_mod
+	import flags_blast as blast_mod
+
+	queries = []
 	if args.blast_input:
-		import flags_blast as blast_mod
 		try:
-			blast_query = blast_mod.read_query(args.blast_input)
+			queries.append(blast_mod.read_query(args.blast_input))
 		except (OSError, ValueError) as e:
 			sys.exit("Error: {}".format(e))
+	for text, path, n in inline:
+		try:
+			queries.append(blast_mod.parse_query(
+				[text], "line {} of {}".format(n, path)))
+		except ValueError as e:
+			sys.exit("Error: {}".format(e))
+
+	if args.blast_mode == "remote":
+		print(">> waiting on NCBI's queue; this often takes several minutes "
+			  "and can be much longer when NCBI is busy.", flush=True)
+	Entrez.email = args.user_email
+	if args.api_key:
+		Entrez.api_key = args.api_key
+	searcher = blast_mod.BlastSearcher(
+		mode=args.blast_mode, database=args.blast_db,
+		evalue=args.blast_evalue, max_hits=args.blast_hits,
+		threads=args.cpu or 0, email=args.user_email,
+		max_wait=args.blast_wait * 60,
+		report=lambda msg: print(">> {}".format(msg), flush=True))
+
+	for query in queries:
+		label = query.accession or "the supplied sequence"
 		if args.verbose:
 			print(">> BlastP ({}) for {} against {}...".format(
-				args.blast_mode,
-				blast_query.accession or "the supplied sequence",
-				args.blast_db), flush=True)
-		if args.blast_mode == "remote":
-			print(">> waiting on NCBI's queue; this often takes several minutes "
-				  "and can be much longer when NCBI is busy.", flush=True)
-		Entrez.email = args.user_email
-		if args.api_key:
-			Entrez.api_key = args.api_key
+				args.blast_mode, label, args.blast_db), flush=True)
 		try:
-			searcher = blast_mod.BlastSearcher(
-				mode=args.blast_mode, database=args.blast_db,
-				evalue=args.blast_evalue, max_hits=args.blast_hits,
-				threads=args.cpu or 0, email=args.user_email,
-				max_wait=args.blast_wait * 60,
-				report=lambda msg: print(">> {}".format(msg), flush=True))
-			blast_hits = searcher.search(blast_query)
+			hits = searcher.search(query)
 		except Exception as e:
 			debug("blast failed", exc=True)
-			sys.exit("Error: BlastP search failed: {}".format(e))
-		if not blast_hits:
-			sys.exit("Error: BlastP returned no hits for {}. Try a larger "
-					 "--blast_evalue or a fuller --blast_db.".format(
-						 blast_query.accession or "the supplied sequence"))
+			sys.exit("Error: BlastP search failed for {}: {}".format(label, e))
+		if not hits:
+			print("Warning: BlastP returned no hits for {}. Try a larger "
+				  "--blast_evalue or a fuller --blast_db.".format(label))
+			continue
 		already = {p.split(".")[0] for p, _ in proteins_assembly}
 		already |= {p.split(".")[0] for p in proteins_only}
-		added = [h.accession for h in blast_hits
+		added = [h.accession for h in hits
 				 if h.accession.split(".")[0] not in already]
 		proteins_only.extend(added)
+		blast_hits.extend(hits)
+		blast_query = blast_query or query
 		if args.verbose:
 			short = (" (asked for {}; the database had no more above the E-value "
 					 "cutoff)".format(args.blast_hits)
-					 if len(blast_hits) < args.blast_hits else "")
+					 if len(hits) < args.blast_hits else "")
 			print(">> BlastP: {} hits, {} new queries{}".format(
-				len(blast_hits), len(added), short), flush=True)
-		timings["1b_blast"] = time.perf_counter() - t0; t0 = time.perf_counter()
+				len(hits), len(added), short), flush=True)
+
+	if queries and not blast_hits:
+		sys.exit("Error: BlastP returned no hits for any query.")
+	timings["1b_blast"] = time.perf_counter() - t0
 	return blast_hits, blast_query, blast_mod
 
 
@@ -1465,7 +1487,7 @@ def main():
 	args.input_list = list(args.input_list or [])
 	all_lists = args.input_list
 	if not all_lists and not args.blast_input:
-		sys.exit("Error: give -i/--input_list, --blast_input, or both.")
+		sys.exit("Error: give -i/--input_list, -bi/--blast_input, or both.")
 	for path in all_lists:
 		if not os.path.isfile(path):
 			sys.exit("Error: input list not found: {}".format(path))
@@ -1514,13 +1536,14 @@ def main():
 	t_start = time.perf_counter()
 	t0 = t_start
 
-	proteins_assembly, proteins_only = (
-		AccessionListReader(args.input_list).read() if all_lists else ([], []))
+	proteins_assembly, proteins_only, inline_blast = (
+		AccessionListReader(args.input_list).read() if all_lists
+		else ([], [], []))
 	proteins_only = list(proteins_only)
 	timings["1_read_input"] = time.perf_counter() - t0; t0 = time.perf_counter()
 
 	blast_hits, blast_query, blast_mod = resolve_blast(
-		args, proteins_assembly, proteins_only, timings, t0)
+		args, proteins_assembly, proteins_only, inline_blast, timings, t0)
 	t0 = time.perf_counter()
 
 	all_queries = [p for p, _ in proteins_assembly] + list(proteins_only)

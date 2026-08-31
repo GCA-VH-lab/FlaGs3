@@ -14,7 +14,8 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 ### Getting the proteins in
 
 * Protein accessions, alone or paired with a specific genome
-* One accession or one raw sequence, expanded to its homologues by BlastP —
+* Accessions or raw sequences expanded to their homologues by BlastP, from a
+  separate file or marked `BLAST` in the main list —
   remotely through NCBI or locally with BLAST+, against RefSeq, GenBank or
   SwissProt
 * NCBI RefSeq and GenBank, the MGnify Genomes catalogue, or your own local
@@ -67,6 +68,8 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   status, external commands and full tracebacks
 
 ## Version history
+
+**1.0.10** — entries in the main input list can be marked `BLAST` for expansion
 
 **1.0.9** — the tree figure draws again, with the same gene styling as the others
 

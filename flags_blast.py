@@ -43,11 +43,10 @@ def _debug(message, exc=False):
 		pass
 
 
-def read_query(path: str) -> BlastQuery:
-	with open(path) as fh:
-		lines = [ln.strip() for ln in fh if ln.strip()]
+def parse_query(lines, source: str = "--blast_input") -> BlastQuery:
+	lines = [ln.strip() for ln in lines if ln.strip()]
 	if not lines:
-		raise ValueError("--blast_input file is empty: {}".format(path))
+		raise ValueError("{} is empty".format(source))
 
 	if len(lines) == 1 and not lines[0].startswith(">"):
 		token = lines[0].split()[0]
@@ -60,13 +59,18 @@ def read_query(path: str) -> BlastQuery:
 		lines = lines[1:]
 	sequence = "".join(lines).replace(" ", "").upper()
 	if not sequence:
-		raise ValueError("--blast_input has a FASTA header but no sequence")
+		raise ValueError("{} has a FASTA header but no sequence".format(source))
 	bad = sorted(set(sequence) - RESIDUES)
 	if bad:
 		raise ValueError(
-			"--blast_input is neither a RefSeq accession nor a protein sequence "
-			"(unexpected characters: {})".format(" ".join(bad)))
+			"{} is neither a RefSeq accession nor a protein sequence "
+			"(unexpected characters: {})".format(source, " ".join(bad)))
 	return BlastQuery(name=name, sequence=sequence, accession=None)
+
+
+def read_query(path: str) -> BlastQuery:
+	with open(path) as fh:
+		return parse_query(fh.readlines(), "--blast_input file {}".format(path))
 
 
 def fetch_sequence(accession: str) -> str:

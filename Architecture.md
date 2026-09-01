@@ -205,6 +205,25 @@ helper so the module keeps working standalone. Every external command goes
 through `TreeBuilder._run`, which logs the command line and exit code — the
 subprocess calls are the parts that fail silently.
 
+### HMM sources
+
+`HmmSource` describes one database: a `.hmm` file or a directory of them, a name
+for the outputs, optional coverage cutoffs and the separator that splits a profile
+name into a group. Nothing about it is DefenseFinder-specific -- that set is just a
+directory of profiles named `System__Profile`, and any other collection works the
+same way.
+
+Models are scored by their own gathering threshold when they carry one and by
+`-e` when they do not, so a database is split into two searches rather than forced
+into one rule. Coverage cutoffs are per database because they mean opposite things
+for the two kinds of model: DefenseFinder profiles are full-length proteins where a
+partial match is noise, Pfam entries are domains where partial coverage is the
+point.
+
+Grouping keys the figure and legend on the part of the name before `__`, falling
+back to the whole name, while `_domains.tsv` keeps database, profile and group so
+the exact model that matched is recoverable.
+
 ### InterPro annotation of domains
 
 `InterProAnnotator` joins Pfam hits to InterPro metadata on the **Pfam accession**,
@@ -378,6 +397,14 @@ how a local database path is given.
 Hits are appended to the `-i` queries, deduped on the version-stripped accession so
 `NP_414542.2` from BlastP does not duplicate a `NP_414542.1` the user paired with a
 specific assembly. Order is best-hit-first and preserved.
+
+### Identifying to NCBI
+
+`flags3` is the registered tool name and is sent on every NCBI request:
+`Entrez.tool` for the E-utilities in `FlaGs3.py` and `flags_blast.py`, the `tool`
+parameter on QBLAST, and a `User-Agent` on the download session. NCBI uses this
+plus the address from `-u` to contact a tool's author before blocking it, so a
+new code path that reaches NCBI should set it too.
 
 ### MGnify and API v2
 

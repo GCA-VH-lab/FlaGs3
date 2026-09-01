@@ -30,7 +30,8 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 * Phylogenetic trees from the query proteins: MAFFT alignment, gap-threshold
   trimming, then VeryFastTree or IQ-TREE with model selection and bootstrap
   support
-* Pfam domain scanning, optionally annotated with InterPro entries, names,
+* Domain scanning against any HMM set — Pfam, or directories of profiles such as
+  DefenseFinder and PADLOC — optionally annotated with InterPro entries, names,
   types and characterisation summaries
 * Transmembrane helices via DeepTMHMM and signal peptides via SignalP
 * Secretion-system detection via Sismis, matched to neighbourhoods by
@@ -68,6 +69,11 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   status, external commands and full tracebacks
 
 ## Version history
+
+**1.0.12** — domain scanning takes any HMM set, including directories of profiles
+such as DefenseFinder
+
+**1.0.11** — requests identify the tool to NCBI as `flags3`
 
 **1.0.10** — entries in the main input list can be marked `BLAST` for expansion
 

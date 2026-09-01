@@ -483,7 +483,7 @@ class OperonView(_FlaGsBase):
 		for q in rows:
 			for g in by_query[q]:
 				for d in domains.get(g.accession, []):
-					group = clans.get(d.name) or d.name
+					group = clans.get(d.name) or getattr(d, "group", "") or d.name
 					if group not in group_index:
 						group_index[group] = len(group_index)
 						group_label[group] = group

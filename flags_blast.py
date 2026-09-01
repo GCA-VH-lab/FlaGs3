@@ -85,6 +85,7 @@ def fetch_sequence(accession: str) -> str:
 
 
 BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+NCBI_TOOL = "flags3"
 POLL_SECONDS = 60
 MAX_WAIT_SECONDS = 3600
 
@@ -161,9 +162,9 @@ class BlastSearcher:
 		from urllib.request import Request, urlopen
 		if self.email:
 			params.setdefault("email", self.email)
-		params.setdefault("tool", "FlaGs3")
+		params.setdefault("tool", NCBI_TOOL)
 		req = Request(BLAST_URL, data=urlencode(params).encode(),
-					  headers={"User-Agent": "BiopythonClient"})
+					  headers={"User-Agent": NCBI_TOOL})
 		return urlopen(req, timeout=120)
 
 	def _submit(self, fasta: str):

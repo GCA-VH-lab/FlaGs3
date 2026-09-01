@@ -22,6 +22,26 @@ from Bio.Seq import Seq
 
 import flags_log
 from flags_log import debug, set_debug
+
+NCBI_TOOL = "flags3"
+DEFAULT_HMMDB = "./pfam_db/Pfam-A.hmm"
+
+
+def parse_coverage(specs):
+	out = {}
+	for spec in specs or []:
+		name, _, values = spec.rpartition("=")
+		parts = [p for p in values.split(",") if p.strip()]
+		try:
+			nums = [float(p) for p in parts]
+		except ValueError:
+			raise ValueError("--hmm_coverage expects numbers, got {!r}".format(spec))
+		if not nums or len(nums) > 2 or any(not 0 <= n <= 1 for n in nums):
+			raise ValueError(
+				"--hmm_coverage takes one or two fractions between 0 and 1, "
+				"got {!r}".format(spec))
+		out[name] = (nums[0], nums[1] if len(nums) > 1 else 0.0)
+	return out
 import pyhmmer
 from pyhmmer.easel import Alphabet, TextSequence, DigitalSequenceBlock
 
@@ -75,6 +95,7 @@ class ProteinAssemblyMapper:
 		self.dropped_cross_db: Dict[str, set] = {}
 		self.unreachable = ""
 		Entrez.email = email
+		Entrez.tool = NCBI_TOOL
 		if api_key:
 			Entrez.api_key = api_key
 
@@ -229,6 +250,7 @@ class _GenomeDownloader:
 		self.failures: Dict[str, str] = {}  
 		os.makedirs(self.out_dir, exist_ok=True)
 		self.session = requests.Session()
+		self.session.headers["User-Agent"] = "{}/{}".format(NCBI_TOOL, VERSION)
 		retry = Retry(total=5, backoff_factor=0.5, respect_retry_after_header=True,
 					  status_forcelist=[429, 500, 502, 503, 504],
 					  allowed_methods=frozenset(["GET"]))
@@ -1019,7 +1041,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.10"
+VERSION = "1.0.12"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1192,7 +1214,8 @@ def build_parser():
 	parser.add_argument("-iq", "--iqtree", action="store_true", help=" Build the tree with IQ-TREE (ModelFinder plus 1000 ultrafast bootstrap replicates) instead of VeryFastTree. Implies --tree. Much slower but gives model selection and branch support. Needs iqtree on PATH. ")
 	parser.add_argument("-to", "--tree_order", action="store_true", help=" Order the neighbours output by tree leaf order (implies --tree). ")
 	parser.add_argument("-d", "--domains", action="store_true", help=" Scan flanking proteins for domains and write <dir>_domains.tsv (requires --hmmdb). ")
-	parser.add_argument("-db", "--hmmdb", default="./pfam_db/Pfam-A.hmm", help=" HMM database file (e.g. Pfam) for domain scanning. ")
+	parser.add_argument("-db", "--hmmdb", action="append", metavar="[NAME=]PATH", help=" HMM database for domain scanning: a .hmm file, or a directory of .hmm files such as DefenseFinder's profiles/. Repeat for several. Prefix with NAME= to label it in the outputs, otherwise the file or directory name is used. Models carrying a gathering threshold are scored by it; the rest use --ethreshold. Default = ./pfam_db/Pfam-A.hmm ")
+	parser.add_argument("-hc", "--hmm_coverage", action="append", metavar="[NAME=]Q[,H]", help=" Minimum fraction of the protein (Q) and of the model (H) an alignment must span, dropping partial hits. Give NAME= to apply it to one database, or omit NAME to apply it to all. Sensible for full-length protein models such as DefenseFinder (e.g. 0.7,0.5); leave off for domain databases like Pfam, where partial coverage is normal. ")
 	parser.add_argument("-pdf", "--pdf", action="store_true", help=" Also write a PDF beside every figure. Needs one of cairosvg, svglib, rsvg-convert or inkscape; without one the figures are still written as SVG. ")
 	parser.add_argument("-nf", "--no_figures", action="store_true", help=" Run the analysis and write the tables, but draw nothing. Figures can be produced later with flags_redraw.py. ")
 	parser.add_argument("-f", "--figures", metavar="TSV", help=" Figure table controlling which figures are drawn and every parameter of how. Default: visualisation_table.tsv, written into the output directory for you to edit and re-apply with flags_redraw.py. ")
@@ -1353,6 +1376,7 @@ def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
 		print(">> waiting on NCBI's queue; this often takes several minutes "
 			  "and can be much longer when NCBI is busy.", flush=True)
 	Entrez.email = args.user_email
+	Entrez.tool = NCBI_TOOL
 	if args.api_key:
 		Entrez.api_key = args.api_key
 	searcher = blast_mod.BlastSearcher(
@@ -1410,9 +1434,15 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 				if args.verbose:
 					print(">> scanning {} proteins for domains...".format(
 						len(extractor.sequences)), flush=True)
-				scanner = dom_mod.DomainScanner(args.hmmdb, cpus=args.cpu or 0)
+				sources = [dom_mod.HmmSource.parse(spec, args.hmm_coverage)
+						   for spec in args.hmmdb]
+				scanner = dom_mod.DomainScanner(sources, evalue=args.ethreshold,
+												cpus=args.cpu or 0)
 				domains = scanner.scan(extractor.sequences)
 				clan_map = dom_mod.DomainScanner.load_clans(args.clans) if args.clans else None
+				if args.verbose:
+					for name, n in scanner.counts.items():
+						print(">> {}: {} domain hits".format(name, n), flush=True)
 			except Exception as e:
 				print("Warning: could not read the HMM database, drawing the figure without domains ({}).".format(e))
 		if domains:
@@ -1497,8 +1527,17 @@ def main():
 		sys.exit("Error: --blast_hits must be at least 2.")
 	if args.use_local and not os.path.isdir(args.use_local):
 		sys.exit("Error: --use_local directory not found: {}".format(args.use_local))
-	if args.domains and args.hmmdb and not os.path.isfile(args.hmmdb):
-		sys.exit("Error: --hmmdb file not found: {}".format(args.hmmdb))
+	args.hmmdb = list(args.hmmdb or [])
+	if args.domains and not args.hmmdb:
+		args.hmmdb = [DEFAULT_HMMDB]
+	for spec in args.hmmdb:
+		path = spec.partition("=")[2] or spec
+		if not os.path.exists(os.path.expanduser(path)):
+			sys.exit("Error: --hmmdb path not found: {}".format(path))
+	try:
+		args.hmm_coverage = parse_coverage(args.hmm_coverage)
+	except ValueError as e:
+		sys.exit("Error: {}".format(e))
 	if args.clans and not os.path.isfile(args.clans):
 		sys.exit("Error: --clans file not found: {}".format(args.clans))
 

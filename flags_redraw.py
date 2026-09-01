@@ -269,7 +269,9 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 				protein=protein, name=row.get("domain", ""),
 				start=int(row.get("start") or 0), end=int(row.get("end") or 0),
 				evalue=float(row.get("evalue") or 0.0),
-				accession=row.get("pfam", "")))
+				accession=row.get("pfam", ""),
+				database=row.get("database", ""),
+				group=row.get("group", "")))
 			if row.get("clan") and row["clan"] != "-":
 				clans[row.get("domain", "")] = row["clan"]
 

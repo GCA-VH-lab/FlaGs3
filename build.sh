@@ -30,6 +30,7 @@ fi
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${THIS_DIR}/environment.yml"
 PFAM_SCRIPT="${THIS_DIR}/pfamA_loader.sh"
+DF_SCRIPT="${THIS_DIR}/defenceFinder_loader.sh"
 ENV_NAME="FlaGs3"
 
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -165,6 +166,36 @@ else
     info "  conda run --name ${ENV_NAME} bash pfamA_loader.sh"
 fi
 
+DF_PROFILES="${THIS_DIR}/defence_db"
+
+if [[ -d "${DF_PROFILES}" ]] && compgen -G "${DF_PROFILES}/*.hmm" > /dev/null; then
+    info "Found the DefenseFinder profiles — anti-phage annotation available."
+    info "  --domains --hmmdb defence=defence_db --hmm_coverage defence=0.3,0.3"
+elif ask "Install the DefenseFinder HMM profiles now? They let --domains annotate" \
+         "anti-phage defence systems alongside Pfam. Download is ~50 MB (255 MB unpacked)."; then
+    if [[ ! -f "${DF_SCRIPT}" ]]; then
+        error "defenceFinder_loader.sh not found at: ${DF_SCRIPT}"
+        error "Place defenceFinder_loader.sh next to build.sh and retry."
+        exit 1
+    fi
+    if [[ ! -x "${DF_SCRIPT}" ]]; then
+        info "Making defenceFinder_loader.sh executable..."
+        chmod +x "${DF_SCRIPT}"
+    fi
+    info "Running defenceFinder_loader.sh..."
+    if ! conda run --no-capture-output --name "${ENV_NAME}" bash "${DF_SCRIPT}"; then
+        error "defenceFinder_loader.sh encountered an error. Check the output above."
+        error "You can re-run it manually at any time:"
+        error "  conda run --name ${ENV_NAME} bash defenceFinder_loader.sh"
+        exit 1
+    fi
+    info "DefenseFinder profiles installed successfully."
+else
+    info "Skipping the DefenseFinder profiles."
+    info "You can install them later by running:"
+    info "  conda run --name ${ENV_NAME} bash defenceFinder_loader.sh"
+fi
+
 
 printf "\n"
 info "Installation complete."
@@ -185,6 +216,7 @@ printf "  Figures and analysis:\n"
 say "    Tree:             ${GREEN}--tree${NC} / ${GREEN}--tree_order${NC}   (mafft + VeryFastTree)"
 say "    Domains:          ${GREEN}--domains --hmmdb pfam_db/Pfam-A.hmm${NC}"
 say "    Clan colouring:   ${GREEN}--clans pfam_db/Pfam-A.clans.tsv.gz${NC}"
+say "    Defence systems:  ${GREEN}--domains --hmmdb defence=defence_db --hmm_coverage defence=0.3,0.3${NC}"
 say "    Membrane/signal:  ${GREEN}--tmhmm${NC} / ${GREEN}--signalp${NC}       (pybiolib, uploads sequences)"
 say "    Secretion:        ${GREEN}--sismis${NC}                  (sismis)"
 say "    Cluster RNAs:     ${GREEN}--cluster_rna${NC}"

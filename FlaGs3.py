@@ -1041,7 +1041,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.12"
+VERSION = "1.0.13"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1354,12 +1354,11 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 
 
 def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
-	blast_hits, blast_query, blast_mod = [], None, None
+	blast_hits, blast_mod, queries = [], None, []
 	if not args.blast_input and not inline:
-		return blast_hits, blast_query, blast_mod
+		return blast_hits, queries, blast_mod
 	import flags_blast as blast_mod
 
-	queries = []
 	if args.blast_input:
 		try:
 			queries.append(blast_mod.read_query(args.blast_input))
@@ -1406,7 +1405,6 @@ def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
 				 if h.accession.split(".")[0] not in already]
 		proteins_only.extend(added)
 		blast_hits.extend(hits)
-		blast_query = blast_query or query
 		if args.verbose:
 			short = (" (asked for {}; the database had no more above the E-value "
 					 "cutoff)".format(args.blast_hits)
@@ -1417,7 +1415,7 @@ def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
 	if queries and not blast_hits:
 		sys.exit("Error: BlastP returned no hits for any query.")
 	timings["1b_blast"] = time.perf_counter() - t0
-	return blast_hits, blast_query, blast_mod
+	return blast_hits, queries, blast_mod
 
 
 def scan_domains(args, extractor, families, all_neighborhoods, out_path,
@@ -1506,7 +1504,9 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 	for suffix in getattr(args, "input_copies", []):
 		print("  {}{}".format(prefix, suffix))
 	if blast_hits:
-		print("  {}_blast_hits.tsv / {}_blast_input.txt".format(prefix, prefix))
+		print("  {}_blast_hits.tsv / {}_blast_accessions.txt".format(prefix, prefix))
+		if args.blast_input:
+			print("  {}_blast_input.txt".format(prefix))
 
 
 
@@ -1581,7 +1581,7 @@ def main():
 	proteins_only = list(proteins_only)
 	timings["1_read_input"] = time.perf_counter() - t0; t0 = time.perf_counter()
 
-	blast_hits, blast_query, blast_mod = resolve_blast(
+	blast_hits, blast_queries, blast_mod = resolve_blast(
 		args, proteins_assembly, proteins_only, inline_blast, timings, t0)
 	t0 = time.perf_counter()
 
@@ -1848,7 +1848,10 @@ def main():
 							row_sequences=extractor.row_sequences)
 	n_issues = reporter.write_all(out_path)
 	if blast_hits:
-		blast_mod.write_report(blast_hits, blast_query, out_path("_blast_hits.tsv"))
+		blast_mod.write_report(blast_hits, blast_queries[0],
+							   out_path("_blast_hits.tsv"))
+		blast_mod.write_accessions(blast_hits, blast_queries,
+								   out_path("_blast_accessions.txt"))
 	if args.verbose:
 		print(">> wrote data tables and reports ({} queries with issues)".format(n_issues),
 			  flush=True)

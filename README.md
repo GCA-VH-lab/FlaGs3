@@ -70,6 +70,9 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.0.13** — BlastP hits saved as a reusable accession list, and a loader for the
+DefenseFinder profiles
+
 **1.0.12** — domain scanning takes any HMM set, including directories of profiles
 such as DefenseFinder
 

@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 pfam_db/
+defence_db_*/
 genomes/
 *.diff
 

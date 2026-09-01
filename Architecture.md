@@ -205,6 +205,13 @@ helper so the module keeps working standalone. Every external command goes
 through `TreeBuilder._run`, which logs the command line and exit code — the
 subprocess calls are the parts that fail silently.
 
+### Repeating a BlastP run
+
+`_blast_accessions.txt` holds the hits as a bare accession list that `-i` accepts,
+so a run can be repeated without going back to NCBI. It is deduplicated on the
+version-stripped accession and its two header lines start with `#`, which the
+input reader skips.
+
 ### HMM sources
 
 `HmmSource` describes one database: a `.hmm` file or a directory of them, a name

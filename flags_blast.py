@@ -282,6 +282,22 @@ class BlastSearcher:
 		return out
 
 
+def write_accessions(hits: List[BlastHit], queries, path: str):
+	seen, lines = set(), []
+	for hit in hits:
+		key = hit.accession.split(".")[0]
+		if key not in seen:
+			seen.add(key)
+			lines.append(hit.accession)
+	with open(path, "w") as out:
+		out.write("# BlastP hits from {}\n".format(
+			", ".join(q.accession or q.name for q in queries) or "a sequence"))
+		out.write("# Reuse with -i to repeat the run without searching again.\n")
+		for line in lines:
+			out.write(line + "\n")
+	return len(lines)
+
+
 def write_report(hits: List[BlastHit], query: BlastQuery, path: str):
 	with open(path, "w") as out:
 		out.write("#query\t{}\n".format(query.accession or query.name))

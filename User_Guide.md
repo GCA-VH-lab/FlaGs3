@@ -396,7 +396,8 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_sismis_diagnostics.txt` | per-genome Sismis status: scanned, nothing found, or skipped and why (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
 | `results_input.txt` | a copy of the input list, so the results stay self-contained |
-| `results_blast_hits.tsv` | BlastP hits used as queries: accession, E-value, bitscore, description (`--blast_input`) |
+| `results_blast_hits.tsv` | BlastP hits used as queries: accession, E-value, bitscore, description |
+| `results_blast_accessions.txt` | the same hits as a plain accession list — pass it to `-i` to repeat the run without searching again |
 | `results_blast_input.txt` | a copy of the BlastP starting accession or sequence (`--blast_input`) |
 
 **Sequences**

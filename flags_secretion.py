@@ -33,9 +33,10 @@ class SismisScanner:
 		fasta = self._decompressed(genome_path, asm_dir)
 
 		sismis_out = os.path.join(asm_dir, "sismis")
-		cmd = ["sismis", "run", "-g", fasta, "-o", sismis_out]
+		import flags_tools
+		cmd, wd = flags_tools.command("sismis", **{"in": fasta, "out": sismis_out})
 		try:
-			proc = subprocess.run(cmd, capture_output=True, text=True)
+			proc = subprocess.run(cmd, cwd=wd or None, capture_output=True, text=True)
 		except FileNotFoundError:
 			raise FileNotFoundError("sismis not found on PATH; install with 'pip install sismis'.")
 		if proc.returncode != 0:

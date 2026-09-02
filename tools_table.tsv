@@ -1,0 +1,9 @@
+#name	command	directory
+blastp	blastp -query {in} -db {db} -outfmt "6 sacc evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}	
+deeptmhmm	/home/fed/miniconda3/envs/flags3-deeptmhmm/bin/python3 predict.py --fasta {fasta} --output-dir {out}	/home/fed/Work/FlaGs3/deeptmhmm
+iqtree	iqtree -s {in} -m {model} --prefix {prefix} -T {threads} --quiet	
+mafft	mafft --auto --anysymbol --quiet --thread {threads} {in}	
+signalp	/home/fed/miniconda3/envs/flags3-signalp/bin/signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast	
+sismis	sismis run -g {in} -o {out}	
+trimal	trimal -in {in} -out {out} -fasta {mode}	
+veryfasttree	VeryFastTree {in}	

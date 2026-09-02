@@ -24,6 +24,11 @@ import flags_log
 from flags_log import debug, set_debug
 
 NCBI_TOOL = "flags3"
+
+
+def feature_defaults():
+	import flags_features
+	return flags_features.TMHMM_CMD, flags_features.SIGNALP_CMD
 DEFAULT_HMMDB = "./pfam_db/Pfam-A.hmm"
 
 
@@ -1041,7 +1046,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.0.13"
+VERSION = "1.1.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1148,6 +1153,16 @@ def _redact_command_line(argv):
 	return " ".join(out)
 
 
+def note_skipped(args, tool, reason):
+	path = os.path.join(args.output, os.path.basename(
+		os.path.normpath(args.output)) + "_runinfo.txt")
+	try:
+		with open(path, "a") as out:
+			out.write("\nskipped {}\n  {}\n".format(tool, reason))
+	except OSError:
+		pass
+
+
 def write_run_info(args, parser):
 	os.makedirs(args.output, exist_ok=True)
 	prefix = os.path.basename(os.path.normpath(args.output))
@@ -1221,6 +1236,9 @@ def build_parser():
 	parser.add_argument("-f", "--figures", metavar="TSV", help=" Figure table controlling which figures are drawn and every parameter of how. Default: visualisation_table.tsv, written into the output directory for you to edit and re-apply with flags_redraw.py. ")
 	parser.add_argument("-cl", "--clans", help=" Pfam-A.clans.tsv(.gz): colour domains by clan instead of family. ")
 	parser.add_argument("-ip", "--interpro", default=DEFAULT_INTERPRO, help=" InterPro metadata table (.tsv or .tsv.gz) with 'accession' and 'pfam_members' columns. Adds the InterPro entry, its name and type, and short characterisation/informativeness summaries to _domains.tsv, joined on the Pfam accession. Looked for in the working directory and next to FlaGs3.py; if it is not there the domain table is written without those columns. Default = " + DEFAULT_INTERPRO + " ")
+	parser.add_argument("-lth", "--local_tmhmm", action="store_true", help=" Predict transmembrane regions with DeepTMHMM on this machine rather than in the BioLib cloud. Implies --tmhmm. The command and its directory come from the deeptmhmm row of tools_table.tsv; run deeptmhmm_installer.sh to set that up. ")
+	parser.add_argument("-lsp", "--local_signalp", action="store_true", help=" Predict signal peptides with SignalP on this machine rather than in the BioLib cloud. Implies --signalp. The command and its directory come from the signalp row of tools_table.tsv; run signalp_installer.sh to set that up. ")
+	parser.add_argument("--tools", metavar="TSV", help=" Table of external tool commands (mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, DeepTMHMM, SignalP). Default: the tools_table.tsv next to FlaGs3.py. ")
 	parser.add_argument("-th", "--tmhmm", action="store_true", help=" Predict transmembrane regions (DeepTMHMM, via BioLib cloud) and draw them as double red dotted lines in the domain figure. Off by default; needs pybiolib and network. ")
 	parser.add_argument("-sp", "--signalp", action="store_true", help=" Predict signal peptides (SignalP-6, via BioLib cloud) and draw them as black triangles in the domain figure. Off by default; needs pybiolib and network. ")
 	parser.add_argument("-ss", "--sismis", action="store_true", help=" Scan each assembly's genomic FASTA for secretion systems using Sismis (github.com/lmc297/Sismis) and write <dir>_secretion.tsv, noting which query neighborhoods (if any) each hit overlaps. Downloads the genomic FASTA per assembly. Off by default; needs sismis installed (pip install sismis). ")
@@ -1289,12 +1307,14 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 			return {}, 0.0
 		try:
 			import flags_features as feat_mod
-			tm = feat_mod.TMScanner().scan(extractor.sequences, want_signal=not args.signalp)
+			tm = feat_mod.TMScanner(local=args.local_tmhmm).scan(
+				extractor.sequences, want_signal=not args.signalp)
 		except ImportError:
 			print("Warning: --tmhmm needs pybiolib (pip install pybiolib); skipping transmembrane prediction.")
 			return {}, time.perf_counter() - t
 		except Exception as e:
 			print("Warning: DeepTMHMM did not finish, skipping transmembrane regions ({}).".format(e))
+			note_skipped(args, "tmhmm", e)
 			return {}, time.perf_counter() - t
 		return tm, time.perf_counter() - t
 
@@ -1304,12 +1324,14 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 			return {}, 0.0
 		try:
 			import flags_features as feat_mod
-			sp = feat_mod.SignalPScanner().scan(extractor.sequences)
+			sp = feat_mod.SignalPScanner(local=args.local_signalp).scan(
+				extractor.sequences)
 		except ImportError:
 			print("Warning: --signalp needs pybiolib (pip install pybiolib); skipping signal-peptide prediction.")
 			return {}, time.perf_counter() - t
 		except Exception as e:
 			print("Warning: SignalP did not finish, skipping signal peptides ({}).".format(e))
+			note_skipped(args, "signalp", e)
 			return {}, time.perf_counter() - t
 		return sp, time.perf_counter() - t
 
@@ -1318,9 +1340,15 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 								 ("signalp", args.signalp)) if flag]
 	if active:
 		if args.verbose:
-			print(">> running {} in the background (cloud/subprocess, not local CPU)...".format(
-				", ".join(active)), flush=True)
-		if args.tmhmm or args.signalp:
+			local = [n for n, on in (("tmhmm", args.local_tmhmm),
+									 ("signalp", args.local_signalp))
+					 if on and n in active]
+			where = "locally: {}".format(", ".join(local)) if local else \
+				"cloud/subprocess, not local CPU"
+			print(">> running {} in the background ({})...".format(
+				", ".join(active), where), flush=True)
+		if ((args.tmhmm and not args.local_tmhmm)
+				or (args.signalp and not args.local_signalp)):
 			import flags_features as feat_mod
 			feat_mod.warm_up()
 		task = {"sismis": _run_sismis, "tmhmm": _run_tmhmm, "signalp": _run_signalp}
@@ -1548,7 +1576,16 @@ def main():
 	args.output = os.path.abspath(args.output)
 	args.temporary = os.path.abspath(args.temporary)
 
+	if args.local_tmhmm:
+		args.tmhmm = True
+	if args.local_signalp:
+		args.signalp = True
 	set_debug(args.debug)
+	import flags_tools
+	try:
+		flags_tools.load(args.tools)
+	except (OSError, ValueError) as e:
+		sys.exit("Error: {}".format(e))
 	if args.debug:
 		args.verbose = True
 		debug("FlaGs3 {} on {} / python {}".format(

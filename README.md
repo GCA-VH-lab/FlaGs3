@@ -70,6 +70,9 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.1.0** — DeepTMHMM and SignalP can run locally instead of in the cloud, and
+every external tool command is configurable in `tools_table.tsv`
+
 **1.0.13** — BlastP hits saved as a reusable accession list, and a loader for the
 DefenseFinder profiles
 

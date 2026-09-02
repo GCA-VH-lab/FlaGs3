@@ -1,5 +1,8 @@
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import tempfile
 import threading
 from typing import Dict, List, Tuple
@@ -9,6 +12,14 @@ FeatureRegion = Tuple[str, int, int]
 _SUBMIT_LOCK = threading.Lock()   # pybiolib sign-in is not thread-safe; see Architecture.md
 _WARMUP_LOCK = threading.Lock()
 _warmed_up = False
+
+
+def _debug(message, exc=False):
+	try:
+		from flags_log import debug
+		debug(message, exc=exc)
+	except ImportError:
+		pass
 
 
 def write_report(features: Dict[str, List[FeatureRegion]], path: str):
@@ -86,6 +97,76 @@ def parse_signalp_regions(text: str) -> Dict[str, List[FeatureRegion]]:
 			features[name] = [regions[0]]
 		i += 3
 	return features
+
+
+class _LocalScanner:
+
+	def __init__(self, tool: str, needs=None):
+		import flags_tools
+		self.tool = tool
+		self.command, self.directory = flags_tools.get(tool)
+		self.directory = os.path.expanduser(self.directory or "")
+		self.needs = needs
+
+	def _find(self, name):
+		if os.path.sep in name:
+			expanded = os.path.expanduser(name)
+			return expanded if os.path.isfile(expanded) else ""
+		if self.directory:
+			local = os.path.join(self.directory, name)
+			if os.path.isfile(local):
+				return local
+		return shutil.which(name) or ""
+
+	def available(self):
+		cmd = shlex.split(self.command)
+		if not cmd:
+			return "no command configured for {}".format(self.tool)
+		if self.directory and not os.path.isdir(self.directory):
+			return "{} is not a directory".format(self.directory)
+		if not self._find(cmd[0]):
+			return "{} not found in {}".format(
+				cmd[0], self.directory or "PATH" if os.path.sep not in cmd[0]
+				else "the path given")
+		for extra in (self.needs or []):
+			if os.path.sep in extra:
+				continue
+			if self.directory and os.path.isfile(os.path.join(self.directory, extra)):
+				continue
+			if os.path.isfile(extra):
+				continue
+			return "{} not found in {}".format(extra, self.directory or "the working directory")
+		return ""
+
+	def _run(self, sequences: Dict[str, str], result_suffix: str) -> str:
+		tmp = tempfile.mkdtemp(prefix="flags_local_")
+		fasta = os.path.join(tmp, "query.fasta")
+		out_dir = os.path.join(tmp, "out")
+		with open(fasta, "w") as out:
+			for name, seq in sequences.items():
+				out.write(">{}\n{}\n".format(name, seq))
+		import flags_tools
+		cmd, _ = flags_tools.command(self.tool, fasta=fasta, out=out_dir)
+		if self.directory:
+			candidate = os.path.join(self.directory, cmd[0])
+			if os.path.isfile(candidate):
+				cmd[0] = candidate
+		_debug("features: running {} (cwd={})".format(
+			" ".join(cmd), self.directory or os.getcwd()))
+		result = subprocess.run(cmd, cwd=self.directory or None,
+								capture_output=True, text=True)
+		_debug("features: exit {}".format(result.returncode))
+		if result.returncode != 0:
+			raise RuntimeError("{} exited {}: {}".format(
+				cmd[0], result.returncode, (result.stderr or "").strip()[:300]))
+		for root in (out_dir, tmp, self.directory or tmp):
+			for base, _, names in os.walk(root):
+				for name in names:
+					if name.endswith(result_suffix):
+						with open(os.path.join(base, name)) as fh:
+							return fh.read()
+		raise FileNotFoundError(
+			"{} produced no {} under {}".format(cmd[0], result_suffix, tmp))
 
 
 class _BioLibScanner:
@@ -168,11 +249,24 @@ class TMScanner(_BioLibScanner):
 	APP = "DTU/DeepTMHMM"
 	RESULT = "predicted_topologies.3line"
 
+	def __init__(self, local=False):
+		self.local = _LocalScanner("deeptmhmm", needs=["predict.py"]) if local else None
+		if self.local is None:
+			_BioLibScanner.__init__(self)
+
 	def scan(self, sequences: Dict[str, str], want_signal: bool = True
 			 ) -> Dict[str, List[FeatureRegion]]:
 		if not sequences:
 			return {}
 		parse = lambda text: parse_deeptmhmm_3line(text, want_signal=want_signal)
+		if self.local:
+			missing = self.local.available()
+			if missing:
+				raise FileNotFoundError(
+					"local DeepTMHMM unusable: {}. Run deeptmhmm_installer.sh to "
+					"install it and fill in the deeptmhmm row of tools_table.tsv, "
+					"or drop -lth to use the BioLib cloud.".format(missing))
+			return parse(self.local._run(sequences, self.RESULT))
 		return self._run_batched(self.APP, sequences, self.RESULT, parse)
 
 
@@ -183,9 +277,23 @@ class SignalPScanner(_BioLibScanner):
 	RESULT = "prediction_results.txt"
 	ARGS = "--fastafile {fasta} --output_dir output --organism other --format txt --mode fast"
 
+	def __init__(self, local=False):
+		self.local = _LocalScanner("signalp") if local else None
+		if self.local is None:
+			_BioLibScanner.__init__(self)
+
 	def scan(self, sequences: Dict[str, str]) -> Dict[str, List[FeatureRegion]]:
 		if not sequences:
 			return {}
+		if self.local:
+			missing = self.local.available()
+			if missing:
+				raise FileNotFoundError(
+					"local SignalP unusable: {}. Run signalp_installer.sh to "
+					"install it and fill in the signalp row of tools_table.tsv, "
+					"or drop -lsp to use the BioLib cloud.".format(missing))
+			return self._parse_prediction_results(
+				self.local._run(sequences, self.RESULT))
 		return self._run_batched(self.APP, sequences, self.RESULT,
 								 self._parse_prediction_results, args_template=self.ARGS)
 

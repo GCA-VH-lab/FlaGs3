@@ -219,6 +219,7 @@ class BlastSearcher:
 			return BytesIO(resp.read())
 
 	def _local(self, fasta: str) -> List[BlastHit]:
+		import flags_tools
 		binary = shutil.which("blastp")
 		if binary is None:
 			raise FileNotFoundError(
@@ -228,14 +229,16 @@ class BlastSearcher:
 			query_path = os.path.join(tmp, "query.fasta")
 			with open(query_path, "w") as out:
 				out.write(fasta)
-			cmd = [binary, "-query", query_path, "-db", self.database,
-				   "-outfmt", "6 sacc evalue bitscore stitle",
-				   "-evalue", str(self.evalue),
-				   "-max_target_seqs", str(self.max_hits)]
+			cmd, wd = flags_tools.command(
+				"blastp", db=self.database, evalue=self.evalue,
+				hits=self.max_hits, **{"in": query_path})
+			if shutil.which(cmd[0]) is None and binary:
+				cmd[0] = binary
 			if self.threads:
 				cmd += ["-num_threads", str(self.threads)]
 			_debug("blast: running {}".format(" ".join(cmd)))
-			result = subprocess.run(cmd, capture_output=True, text=True)
+			result = subprocess.run(cmd, cwd=wd or None, capture_output=True,
+									text=True)
 			_debug("blast: exit {}".format(result.returncode))
 			if result.returncode != 0:
 				raise RuntimeError("blastp failed ({}): {}".format(

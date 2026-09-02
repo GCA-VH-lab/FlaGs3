@@ -41,14 +41,15 @@ class TreeBuilder:
     self.commands: List[str] = []
 
   def _trimal_cmd(self, src, dst):
-    cmd = ["trimal", "-in", src, "-out", dst, "-fasta"]
+    import flags_tools
     mode = (self.trimal_mode or "gt").lstrip("-")
     if mode in ("gappyout", "strict", "strictplus", "automated1", "nogaps", "noallgaps"):
-      cmd.append("-" + mode)
+      spec = "-" + mode
     else:
-      cmd += ["-" + mode, str(self.trimal_value)]
+      spec = "-{} {}".format(mode, self.trimal_value)
     if self.trimal_extra:
-      cmd += self.trimal_extra.split()
+      spec += " " + self.trimal_extra
+    cmd, _ = flags_tools.command("trimal", mode=spec, **{"in": src, "out": dst})
     return cmd
 
   def build(self, sequences: Dict[str, str]) -> Tuple[str, List[str]]:
@@ -65,9 +66,10 @@ class TreeBuilder:
             out.write(">{}\n{}\n".format(name, seq))
 
         with open(aln, "w") as out:
-          self._run(["mafft", "--auto", "--anysymbol", "--quiet",
-          "--thread", str(self.threads), fasta],
-          check=True, stdout=out, stderr=subprocess.DEVNULL)
+          import flags_tools
+          cmd, wd = flags_tools.command("mafft", threads=self.threads, **{"in": fasta})
+          self._run(cmd, check=True, stdout=out, stderr=subprocess.DEVNULL,
+                    cwd=wd or None)
 
         raw = self._read_alignment(aln)
         self.raw_alignment = raw
@@ -91,9 +93,10 @@ class TreeBuilder:
         if self.engine == "iqtree":
           newick = self._run_iqtree(trimmed, tmp, len(names))
         else:
-          vft = ["VeryFastTree", trimmed]
+          import flags_tools
+          vft, wd = flags_tools.command("veryfasttree", **{"in": trimmed})
           newick = self._run(vft, check=True, capture_output=True,
-                             text=True).stdout.strip()
+                             text=True, cwd=wd or None).stdout.strip()
           self.commands.append(" ".join(vft))
     except FileNotFoundError as e:
       print("Warning: tree building needs mafft and {} on PATH; skipping the tree "
@@ -107,15 +110,19 @@ class TreeBuilder:
     return newick, leaf_order
 
   def _run_iqtree(self, aln: str, tmp: str, n_taxa: int) -> str:
-    binary = next((b for b in ("iqtree3", "iqtree2", "iqtree")
-                   if shutil.which(b)), None)
-    if binary is None:
-      raise FileNotFoundError("no iqtree binary found")
-    cmd = [binary, "-s", aln, "-m", "MFP", "--prefix", os.path.join(tmp, "iq"),
-           "-T", str(self.threads) if self.threads else "AUTO", "--quiet"]
+    import flags_tools
+    cmd, wd = flags_tools.command(
+        "iqtree", model="MFP", prefix=os.path.join(tmp, "iq"),
+        threads=self.threads if self.threads else "AUTO", **{"in": aln})
+    if shutil.which(cmd[0]) is None:
+      alt = next((b for b in ("iqtree3", "iqtree2", "iqtree")
+                  if shutil.which(b)), None)
+      if alt is None:
+        raise FileNotFoundError("no iqtree binary found")
+      cmd[0] = alt
     if n_taxa >= 4:
-      cmd += ["-B", "1000"]   # ultrafast bootstrap needs at least 4 taxa
-    self._run(cmd, check=True, capture_output=True, text=True)
+      cmd += ["-B", "1000"]
+    self._run(cmd, check=True, capture_output=True, text=True, cwd=wd or None)
     self.commands.append(" ".join(cmd))
     with open(os.path.join(tmp, "iq.treefile")) as fh:
       return fh.read().strip()

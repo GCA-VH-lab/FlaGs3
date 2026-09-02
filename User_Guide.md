@@ -39,7 +39,9 @@ flag:
 | `-ss`, `--sismis` | `pip install sismis` |
 
 If a tool is missing, FlaGs3 prints a warning, skips that feature, and finishes
-the rest of the run.
+the rest of the run. That applies to `-lth` and `-lsp` too: if either tool is
+unusable where you pointed it, that feature is skipped and the reason is recorded
+in `_runinfo.txt`, so a run never silently falls back to the cloud.
 
 MGnify accessions are resolved through MGnify's API v2. MGnify's own API v1 was
 switched off in September 2026, so older FlaGs3 releases will not resolve `MGYG`
@@ -185,6 +187,9 @@ feature, and completes the rest of the run.
 | `-hc`, `--hmm_coverage [NAME=]Q[,H]` | — | Minimum fraction of the protein (Q) and of the model (H) an alignment must span. `NAME=` applies it to one database, omitting it applies to all. Use for full-length protein models such as DefenseFinder (`0.7,0.5`); leave off for Pfam, where partial coverage is normal. |
 | `-ip`, `--interpro FILE` | `interpro_metadata_processed.tsv` | InterPro metadata table (`.tsv` or `.tsv.gz`). Adds the InterPro entry, name, type and short characterisation/informativeness summaries to `_domains.tsv`, joined on the Pfam accession. Needs `accession` and `pfam_members` columns. Found automatically in the working directory or next to `FlaGs3.py`; if it isn't there the domain table is simply written without those columns. A path you pass yourself must exist. |
 | `--clans FILE` | — | `Pfam-A.clans.tsv.gz`. Colours domains by clan rather than family, which groups related domains together. |
+| `-lth`, `--local_tmhmm` | off | Predict transmembrane regions with a local DeepTMHMM rather than the BioLib cloud. Implies `--tmhmm`, so it is used on its own. |
+| `-lsp`, `--local_signalp` | off | Predict signal peptides with a local SignalP rather than the BioLib cloud. Implies `--signalp`, so it is used on its own. |
+| `--tools TSV` | `tools_table.tsv` | Table of external tool commands. |
 | `-th`, `--tmhmm` | pybiolib, network | Predict transmembrane regions with DeepTMHMM, drawn as double red dotted lines on the domain figure. Uploads your sequences to the BioLib cloud. |
 | `-sp`, `--signalp` | pybiolib, network | Predict signal peptides with SignalP-6, drawn as black triangles on the domain figure. Also uploads sequences. |
 | `-ss`, `--sismis` | sismis | Scan each genome for secretion systems and write `_secretion.tsv` plus `_secretion.svg`, noting which neighbourhoods each hit overlaps. Downloads the genomic FASTA per genome. |
@@ -299,6 +304,60 @@ BLAST+ against a local database and is far faster, but you need the binary and t
 database — `--blast_db` then takes the database name or path, and `-c/--cpu` sets
 `-num_threads`. An accession is resolved to its sequence through NCBI first, so
 both modes accept the same input.
+
+## External tools
+
+Every program FlaGs3 shells out to is defined in `tools_table.tsv` beside the code:
+mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, DeepTMHMM and SignalP. Edit a
+row to change how one is invoked, or point `--tools` at your own copy. Rows you
+leave out keep their defaults.
+
+```
+#name	command	directory
+deeptmhmm	/opt/dtm-venv/bin/python3 predict.py --fasta {fasta} --output-dir {out}	/opt/DeepTMHMM
+signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast	/opt/signalp/bin
+```
+
+Two of these have installers, because they are licensed downloads with awkward
+dependencies. Request the packages first — SignalP 6 from DTU, DeepTMHMM by
+emailing `licensing@biolib.com` — then:
+
+```bash
+bash signalp_installer.sh   /path/to/signalp-6-package.tar.gz
+bash deeptmhmm_installer.sh /path/to/deeptmhmm-package.tar.gz
+```
+
+Each builds a conda environment (`flags3-signalp`, `flags3-deeptmhmm`) with the
+Python and PyTorch version that tool needs, and fills in its `tools_table.tsv` row
+with the resulting paths, so `--local_signalp` and `--local_tmhmm` work without
+further configuration.
+
+The DeepTMHMM installer finishes by running `predict.py` on the bundled sample,
+with its output shown rather than hidden. That both proves the install works and
+pulls any model weights it needs, so a later `--local_tmhmm` run does not stop to
+download anything. Set `DEEPTMHMM_TIMEOUT` (seconds, default 3600) if that run
+needs longer.
+
+SignalP 6 needs PyTorch below 2.0, and torch 1.x is built against NumPy 1.x, so
+the installer pins `numpy<2` as well and re-checks after installing the package —
+the package itself can pull NumPy 2 back in, which makes `signalp6` fail at import
+with a NumPy 1.x/2.x mismatch.
+
+DeepTMHMM's own `requirements.txt` pins `torch==1.5.0+cu92`, a CUDA 9.2 build from
+2018 that exists only on PyTorch's index. The installer uses the CPU build instead:
+cu92 predates current GPUs, and on one it fails inside cuBLAS as soon as it runs.
+Set `DEEPTMHMM_GPU=1` to use the CUDA build anyway. Either way the torch pin is
+stripped from the requirements before the rest are installed, so the two cannot
+conflict.
+
+`directory` is the working directory for that tool, and a relative program name is
+looked up inside it. That is what makes tools with their own Python environments
+workable: DeepTMHMM needs Python 3.8 and SignalP 6 needs PyTorch below 2.0, so
+neither can share the FlaGs3 environment — naming their interpreter in `command`
+avoids the clash.
+
+Placeholders substituted per tool: `{in}`, `{out}`, `{fasta}`, `{threads}`,
+`{mode}`, `{model}`, `{prefix}`, `{db}`, `{evalue}`, `{hits}`.
 
 ## Redrawing the figures
 

@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 pfam_db/
 defence_db_*/
+deeptmhmm/
+signalp-6-package/
+*.lock
 genomes/
 *.diff
 

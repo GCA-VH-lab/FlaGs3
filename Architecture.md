@@ -476,6 +476,65 @@ time, so the `-vb` timing table reports true per-tool cost even though the three
 overlap in wall time. `TOTAL` is measured wall clock, not the sum of stages —
 the stages overlap, so summing them would over-count.
 
+### External commands live in a table
+
+The scripts split by what they actually do: `pfamA_loader.sh` and
+`defenceFinder_loader.sh` fetch data, while `signalp_installer.sh` and
+`deeptmhmm_installer.sh` build software environments.
+
+`signalp_installer.sh` and `deeptmhmm_installer.sh` build the fixed environments
+`flags3-signalp` and `flags3-deeptmhmm` and then rewrite their own row of
+`tools_table.tsv` with the interpreter and directory they produced. Neither can
+download its tool: both are licensed, so the scripts take a package the user has
+already obtained. Fixing the environment names is the point -- the table row then
+means the same thing on every machine.
+
+Both installers pin more than the tool's own instructions ask for, because the
+instructions predate their dependencies moving on: SignalP needs `numpy<2` to go
+with `torch<2.0`, since torch 1.x is compiled against the NumPy 1.x ABI and fails
+at import against NumPy 2.
+
+DeepTMHMM's `requirements.txt` pins a `+cu92` torch build that is not on PyPI, so
+the installer resolves torch itself and strips the torch lines before installing
+the rest. It installs the CPU build rather than the pinned one: CUDA 9.2 does not
+support current GPU architectures, and torch then dies in cuBLAS on the first
+matmul. The test run also clears `CUDA_VISIBLE_DEVICES`, so a CUDA build that is
+already installed still verifies on CPU. Doing it the other way round -- letting pip read the file as written --
+fails on any machine without that CUDA index.
+
+`flags_tools.py` holds one row per external program, defaulting to the built-in
+invocation and overridable in `tools_table.tsv`. Each row carries a command
+template and a working directory; a relative program name is resolved inside that
+directory. The point is not cosmetic: DeepTMHMM pins Python 3.8 and SignalP 6 pins
+PyTorch below 2.0, so neither can run in the FlaGs3 environment, and naming the
+interpreter in the command is the only way to reach them. `-lth` and `-lsp`
+therefore take no arguments -- where a tool lives does not change between runs --
+and each implies its own feature, so `-lsp` alone is enough and `-sp -lsp` is not
+a thing anyone has to type.
+
+### Running the feature tools locally
+
+`_LocalScanner` passes an output path that does not yet exist and lets the tool
+create it: DeepTMHMM's `predict.py` refuses to run if its `--output-dir` is already
+there, so pre-creating it broke every local run. Tools that expect to create their
+own output directory are the norm; one that requires an existing directory would
+need the scanner to make it.
+
+`_LocalScanner` shells out and hands the output to the same parsers the cloud path
+uses, so a local and a cloud run produce identical `_features.tsv`. The two tools
+are switched independently because they install differently: SignalP 6 has a real
+`signalp6` CLI, whereas DeepTMHMM has no pip entry point and local use means a
+licensed checkout with `predict.py`, run from its own directory. pybiolib once
+offered `machine="local"`; current versions raise on it, so that route is closed.
+
+`available()` is checked before running, and an unusable tool skips that feature
+rather than falling back to the cloud -- a run asked to stay local should not
+start uploading sequences because of a typo. The reason is appended to
+`_runinfo.txt`.
+
+Batching applies to the cloud path only -- it exists for the submission limit, not
+for the tools -- so a local run sends everything in one call.
+
 ### BioLib submission constraints
 
 Three things in `flags_features.py` look removable and are not:

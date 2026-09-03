@@ -41,6 +41,9 @@ class HmmSource(NamedTuple):
 		return cls(name=name, path=path, query_cov=q, hmm_cov=h,
 				   group_sep=group_sep)
 
+	def single_file(self):
+		return None if os.path.isdir(self.path) else self.path
+
 	def models(self):
 		if os.path.isdir(self.path):
 			files = sorted(os.path.join(self.path, f)
@@ -121,6 +124,7 @@ class DomainScanner:
 		self.cpus = cpus  
 		self.alphabet = Alphabet.amino()
 		self.counts: Dict[str, int] = {}
+		self._open: List = []
 
 	def scan(self, sequences: Dict[str, str]) -> Dict[str, List[DomainHit]]:
 		if not sequences:
@@ -135,13 +139,22 @@ class DomainScanner:
 				for top in model:
 					found += self._collect(top, source, hits)
 			self.counts[source.name] = found
+		for handle in self._open:
+			handle.close()
+		self._open = []
 		return hits
 
 	def _searches(self, source: HmmSource, block):
-		models = source.models()
-		gated = [m for m in models if getattr(m, "cutoffs", None) is not None
-				 and m.cutoffs.gathering_available()]
-		plain = [m for m in models if m not in gated] if gated else models
+		single = source.single_file()
+		if single:
+			return [self._stream_search(single, source, block)]
+		gated, plain = [], []
+		for model in source.models():
+			cutoffs = getattr(model, "cutoffs", None)
+			if cutoffs is not None and cutoffs.gathering_available():
+				gated.append(model)
+			else:
+				plain.append(model)
 		runs = []
 		if gated:
 			runs.append(pyhmmer.hmmer.hmmsearch(
@@ -150,6 +163,25 @@ class DomainScanner:
 			runs.append(pyhmmer.hmmer.hmmsearch(
 				plain, block, E=self.evalue, cpus=self.cpus))
 		return runs
+
+	def _stream_search(self, path: str, source: HmmSource, block):
+		with HMMFile(path) as handle:
+			first = next(iter(handle), None)
+			cutoffs = getattr(first, "cutoffs", None)
+			gathering = cutoffs is not None and cutoffs.gathering_available()
+		handle = HMMFile(path)
+		self._open.append(handle)
+		models = handle
+		if handle.is_pressed:
+			try:
+				models = handle.optimized_profiles()
+			except ValueError:
+				handle.rewind()
+		if gathering:
+			return pyhmmer.hmmer.hmmsearch(
+				models, block, bit_cutoffs="gathering", cpus=self.cpus)
+		return pyhmmer.hmmer.hmmsearch(models, block, E=self.evalue,
+									   cpus=self.cpus)
 
 	def _collect(self, top, source: HmmSource, hits) -> int:
 		name = self._decode(top.query.name)

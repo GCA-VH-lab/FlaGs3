@@ -156,6 +156,12 @@ class _LocalScanner:
 		result = subprocess.run(cmd, cwd=self.directory or None,
 								capture_output=True, text=True)
 		_debug("features: exit {}".format(result.returncode))
+		try:
+			import flags_log
+			flags_log.record_command(cmd, result.returncode,
+									 result.stdout, result.stderr)
+		except ImportError:
+			pass
 		if result.returncode != 0:
 			raise RuntimeError("{} exited {}: {}".format(
 				cmd[0], result.returncode, (result.stderr or "").strip()[:300]))

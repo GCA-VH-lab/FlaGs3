@@ -164,6 +164,7 @@ Used only with `--blast_input`. See [Starting from one protein](#starting-from-o
 | `-o`, `--output DIR` | `output` | Result directory. A `_YYYYMMDD_HHMMSS` stamp of the run start is appended so repeated runs do not overwrite each other, and the stamped name is also the prefix on every file inside, so `-o myrun` produces `myrun_20260810_093134/myrun_20260810_093134_neighbors.svg`. |
 | `-nt`, `--no_timestamp` | off | Use `-o` verbatim, without the stamp. Repeated runs then overwrite each other; use it when a pipeline needs a fixed path. |
 | `-vb`, `--verbose` | off | Per-stage progress and a timing breakdown. Worth using on any long run. |
+| — | always on | Every line the run prints is copied to `<prefix>_console.log` in the output directory. Nothing turns this off; it costs one open file. |
 | `-dbg`, `--debug` | off | Diagnostics to stderr, each line stamped with seconds since start: per-file download timings split into limiter wait, time-to-first-byte and body transfer, plus HTTP status codes, external command lines with exit codes, and full tracebacks. Implies `--verbose`. Start here when downloads are slow or a tool silently produces nothing. |
 | `-nl`, `--no_lock` | off | Skip the lock that stops two runs sharing one `-tmp` directory. Only safe if each run has its own `-tmp`. |
 | `-v`, `--version` | — | Print the version and exit. |
@@ -421,6 +422,14 @@ shells out to the same script, a redraw reproduces the run's figures exactly.
 fails partway still records what it was asked to do. Your `--api_key` value is
 masked in `_runinfo.txt`.
 
+`_console.log` is a transcript of the run. Everything printed to the terminal
+goes into it, and so does the output of the external tools FlaGs3 captures rather
+than shows — mafft, trimal, blastp, sismis, the local feature tools and the
+figure step. Lines that went to stderr, which is where `--debug` writes, carry a
+`[stderr] ` prefix, so `grep -v '^\[stderr\]'` gives back the plain terminal
+transcript and `grep '^\[stderr\]'` gives just the diagnostics. It is written
+as the run goes, and survives a crash or Ctrl-C.
+
 Every file is prefixed with the output directory's name, stamp included — a run
 with `-o results` writes `results_20260810_093134/results_20260810_093134_operon.tsv`.
 The tables below drop the stamp and write `results_...` for readability.
@@ -454,6 +463,7 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_secretion.tsv` | Sismis hits and which neighbourhoods they overlap (`--sismis`) |
 | `results_sismis_diagnostics.txt` | per-genome Sismis status: scanned, nothing found, or skipped and why (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
+| `results_console.log` | everything the run printed, plus the output of external tools that never reached the terminal |
 | `results_input.txt` | a copy of the input list, so the results stay self-contained |
 | `results_blast_hits.tsv` | BlastP hits used as queries: accession, E-value, bitscore, description |
 | `results_blast_accessions.txt` | the same hits as a plain accession list — pass it to `-i` to repeat the run without searching again |
@@ -509,6 +519,11 @@ NCBI and EBI from rejecting the run.
 **The diagram is unexpectedly wide.**
 A neighbour lying very far from the query stretches the canvas. This normally
 means a fragmented assembly where the query sits near a contig edge.
+
+**A tool produced nothing and the warning does not say why.**
+Read `results_console.log`. External tools are run with their output captured,
+so their own error messages never reach the terminal — the log has them in full,
+under a `--- toolname (exit N) ---` header.
 
 **A tool was skipped.**
 Warnings name the missing dependency and the install command. The run continues

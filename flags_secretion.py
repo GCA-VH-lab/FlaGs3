@@ -37,6 +37,11 @@ class SismisScanner:
 		cmd, wd = flags_tools.command("sismis", **{"in": fasta, "out": sismis_out})
 		try:
 			proc = subprocess.run(cmd, cwd=wd or None, capture_output=True, text=True)
+			try:
+				import flags_log
+				flags_log.record_command(cmd, proc.returncode, proc.stdout, proc.stderr)
+			except ImportError:
+				pass
 		except FileNotFoundError:
 			raise FileNotFoundError("sismis not found on PATH; install with 'pip install sismis'.")
 		if proc.returncode != 0:

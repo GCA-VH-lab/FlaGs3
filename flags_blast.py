@@ -240,6 +240,12 @@ class BlastSearcher:
 			result = subprocess.run(cmd, cwd=wd or None, capture_output=True,
 									text=True)
 			_debug("blast: exit {}".format(result.returncode))
+			try:
+				import flags_log
+				flags_log.record_command(cmd, result.returncode,
+										 stderr=result.stderr)
+			except ImportError:
+				pass
 			if result.returncode != 0:
 				raise RuntimeError("blastp failed ({}): {}".format(
 					result.returncode, (result.stderr or "").strip()[:300]))

@@ -22,10 +22,28 @@ class TreeBuilder:
       pass
 
   @classmethod
+  def _record(cls, cmd, returncode, stderr=None):
+    try:
+      import flags_log
+      flags_log.record_command(cmd, returncode, stderr=stderr)
+    except ImportError:
+      pass
+
+  @classmethod
   def _run(cls, cmd, **kwargs):
     cls._debug("running: {}".format(" ".join(str(c) for c in cmd)))
-    result = subprocess.run(cmd, **kwargs)
+    try:
+      result = subprocess.run(cmd, **kwargs)
+    except subprocess.CalledProcessError as e:
+      cls._debug("exit {} from {}".format(e.returncode, cmd[0]))
+      cls._record(cmd, e.returncode, getattr(e, "stderr", None))
+      raise
+    except OSError as e:
+      cls._debug("could not run {}: {}".format(cmd[0], e))
+      cls._record(cmd, "not run", str(e))
+      raise
     cls._debug("exit {} from {}".format(result.returncode, cmd[0]))
+    cls._record(cmd, result.returncode, getattr(result, "stderr", None))
     return result
 
   def __init__(self, threads: int = 0, engine: str = "veryfasttree",

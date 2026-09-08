@@ -199,6 +199,40 @@ from another host are never reclaimed, since liveness cannot be checked there.
 Release is via `atexit`, so it covers exceptions and Ctrl-C; `SIGKILL` leaves the
 file behind and the staleness check handles that on the next run.
 
+### The console transcript
+
+`flags_log` tees `sys.stdout` and `sys.stderr` from the first line of `main()`,
+before `parse_args()`, and buffers what it captures in memory until `attach()` is
+given a path. The buffer exists because the output directory's name is not known
+until the timestamp is applied and the path absolutised, by which point several
+validation messages have already been printed. Capturing from process start and
+flushing later is the only way those end up in the file; installing the tee after
+the path is resolved would silently lose them.
+
+Lines are split on newlines and tagged per stream, with an unterminated tail held
+back until the rest of its line arrives -- `print` writes the text and the newline
+as two calls, so tagging each `write()` would break every line in half. Stderr
+lines get a `[stderr] ` prefix rather than a second file: one file keeps the
+interleaving, which is what makes a `--debug` run readable, and the prefix is
+enough to recover either stream with `grep`.
+
+The tee is installed by an explicit call rather than on import, since
+`flags_redraw.py` imports `flags_log` too and a module that replaces `sys.stdout`
+merely by being imported is a trap.
+
+`record_command` exists because every external tool is run with `capture_output=True`,
+so a tool's own diagnostics never reach the terminal and were previously discarded
+entirely -- the run reported "produced nothing" with no way to find out why. Tools
+whose stdout *is* the payload (mafft's alignment, VeryFastTree's newick, blastp's
+hit table) record only stderr. `TreeBuilder._run` records on `CalledProcessError`
+and `OSError` as well as on success, because a command that failed or was missing
+is the one worth having in the log.
+
+`atexit` closes the transcript, and it is registered first so it runs last: the
+lock release and any shutdown message are captured before the file closes. An
+uncaught `SystemExit` prints its message through the still-installed tee, so the
+`sys.exit("Error: ...")` paths and a Ctrl-C both leave a complete log.
+
 `--debug` sets a module-level flag read by `debug()`, which writes to stderr and
 optionally appends a traceback. `flags_tree.py` imports it lazily inside a
 helper so the module keeps working standalone. Every external command goes

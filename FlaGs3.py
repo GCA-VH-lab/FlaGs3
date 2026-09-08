@@ -1046,7 +1046,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1529,6 +1529,8 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 				   "_accessionIssues.txt", "_tree.fasta", "_flankgene.fasta", "_all.fasta",
 				   "_runinfo.txt"):
 		print("  {}{}".format(prefix, suffix))
+	if flags_log.transcript_path():
+		print("  {}_console.log".format(prefix))
 	for suffix in getattr(args, "input_copies", []):
 		print("  {}{}".format(prefix, suffix))
 	if blast_hits:
@@ -1539,6 +1541,8 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 
 
 def main():
+	flags_log.start_buffering()
+	atexit.register(flags_log.close)
 	parser = build_parser()
 	args = parser.parse_args()
 
@@ -1575,6 +1579,14 @@ def main():
 
 	args.output = os.path.abspath(args.output)
 	args.temporary = os.path.abspath(args.temporary)
+
+	try:
+		flags_log.attach(os.path.join(
+			args.output,
+			os.path.basename(os.path.normpath(args.output)) + "_console.log"))
+	except OSError as e:
+		print("Warning: could not open the console log ({}); the run continues "
+			  "without one.".format(e))
 
 	if args.local_tmhmm:
 		args.tmhmm = True
@@ -1909,6 +1921,9 @@ def main():
 		try:
 			done = subprocess.run(cmd, capture_output=True, text=True)
 			debug("flags_redraw exit {}".format(done.returncode))
+			flags_log.record("--- flags_redraw.py (exit {}) ---".format(done.returncode))
+			flags_log.record(done.stdout)
+			flags_log.record(done.stderr, "stderr")
 			if done.returncode != 0:
 				print("Warning: figures were not drawn ({}).".format(
 					(done.stderr or done.stdout or "").strip()[:300]))

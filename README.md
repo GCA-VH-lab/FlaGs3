@@ -67,8 +67,13 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   feature rather than ending the run
 * Verbose progress with per-stage timings, and a debug mode reporting HTTP
   status, external commands and full tracebacks
+* A full console transcript saved beside the results, surviving crashes and
+  Ctrl-C
 
 ## Version history
+
+**1.2.0** — every line the run prints is also saved as `<prefix>_console.log`,
+including the output of external tools that never reached the terminal
 
 **1.1.0** — DeepTMHMM and SignalP can run locally instead of in the cloud, and
 every external tool command is configurable in `tools_table.tsv`

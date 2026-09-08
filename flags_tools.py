@@ -14,6 +14,8 @@ DEFAULTS = {
 	"blastp": ("blastp -query {in} -db {db} -outfmt \"6 sacc evalue bitscore stitle\" "
 			   "-evalue {evalue} -max_target_seqs {hits}", ""),
 	"sismis": ("sismis run -g {in} -o {out}", ""),
+	"mmseqs": ("mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} "
+			   "-c {cov} --cov-mode 0 --threads {threads} -v 1", ""),
 	"deeptmhmm": ("python3 predict.py --fasta {fasta} --output-dir {out}", ""),
 	"signalp": ("signalp6 --fastafile {fasta} --output_dir {out} --organism other "
 				"--format txt --mode fast", ""),

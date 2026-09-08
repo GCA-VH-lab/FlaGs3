@@ -179,6 +179,7 @@ the input is small enough; use `-g` with `-sr` when it is not.
 | `-sr`, `--scan_range BP` | neighbourhood span | Genomic span around the query handed to the scanning tools, independent of how many genes are clustered and drawn. |
 | `-e`, `--ethreshold X` | `1e-3` | Inclusion E-value for clustering. Lower is stricter, giving more and smaller families. |
 | `-n`, `--number N` | `3` | Jackhmmer iterations. More iterations find remoter homology but blur family boundaries. |
+| `-cc`, `--cluster_collapse [ID[,COV]]` | off | Collapse near-identical flanking proteins with MMseqs2, cluster only the representatives, and give each member its representative's family. Bare `-cc` means `0.9,0.8`. Needs `mmseqs`; run `mmseqs_installer.sh`. |
 | `-cr`, `--cluster_rna` | off | Also cluster flanking RNA genes into families. Uses nhmmer on RNA sequences where available, otherwise groups by product name. |
 
 ### Output and progress
@@ -329,6 +330,41 @@ BLAST+ against a local database and is far faster, but you need the binary and t
 database — `--blast_db` then takes the database name or path, and `-c/--cpu` sets
 `-num_threads`. An accession is resolved to its sequence through NCBI first, so
 both modes accept the same input.
+
+### When to collapse before clustering
+
+Clustering compares every flanking protein against every other, so its cost grows
+with the square of how many there are. `--cluster_collapse` reduces them to
+MMseqs2 representatives first, clusters those, and hands each member its
+representative's family.
+
+Two honest caveats before you reach for it.
+
+**The gain is usually smaller than the curve suggests.** FlaGs3 keys its sequence
+table by accession, so proteins identical across genomes already collapse for
+free — MMseqs2 only recovers what sits between your cutoff and 100% identity. On
+real flanking proteins from unrelated genera that was 1.00x at 90% and 1.17x at
+50%. It pays off when the input holds many strains of the same species; it does
+very little when the genomes are all different species. Choosing `-g` over `-r`
+is the far bigger lever.
+
+**Collapsing hard can split families, not just merge them.** A sequence that
+would have bridged two groups never gets searched once it is folded into a
+representative, so the bridge disappears. Measured on a 950-protein run:
+
+| setting | families | identical to an uncollapsed run |
+|---|---|---|
+| no collapse | 528 | — |
+| `-cc` (0.9, 0.8) | 528 | every one |
+| `-cc 0.5,0.8` | 533 | 521, with 71 proteins moved |
+
+At the default the result was indistinguishable from not collapsing at all. At
+50% it was not. Stay at `0.9,0.8` unless a run is otherwise impossible, and check
+`_collapse.tsv` when a family looks wrong.
+
+It is never switched on automatically, whatever the run size. If `mmseqs` is
+missing the run stops rather than quietly clustering everything, since that turns
+an hour into days with nothing in the output to say why.
 
 ## External tools
 
@@ -487,6 +523,7 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_secretion.tsv` | Sismis hits and which neighbourhoods they overlap (`--sismis`) |
 | `results_sismis_diagnostics.txt` | per-genome Sismis status: scanned, nothing found, or skipped and why (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
+| `results_collapse.tsv` | each MMseqs2 representative, its family, and its members, so a propagated family assignment can be traced back (`--cluster_collapse`) |
 | `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |
 | `results_console.log` | everything the run printed, plus the output of external tools that never reached the terminal |
 | `results_input.txt` | a copy of the input list, so the results stay self-contained |

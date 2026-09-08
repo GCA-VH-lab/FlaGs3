@@ -207,6 +207,58 @@ derived its numbering from the same sort.
 `RnaClusterer` mirrors this with nhmmer for RNA genes, falling back to grouping
 by normalised product name when no nucleotide sequence is available.
 
+### Components are taken on a symmetrised graph
+
+jackhmmer adjacency is genuinely one-directional in a few percent of pairs: A's
+profile finds B while B's does not find A, which is normal when one of them sits
+in a larger or more diverse family. On a real 950-protein run, 235 hit pairs were
+one-directional.
+
+`_connected_components` used to traverse that raw map. Skipping a node only as a
+*starting* point is not enough -- a later node reaches back into a component that
+has already closed and pulls its members in a second time. 26 of those 950
+proteins ended up in two families, so `_clusters.tsv` double-counted them and
+`family_numbers` picked one assignment arbitrarily, letting a figure and a table
+disagree about the same gene.
+
+The map is now symmetrised before traversal, which is what the "symmetric by
+construction" claim always assumed. Components become a genuine partition and the
+result no longer depends on iteration order.
+
+### Collapsing before clustering
+
+Clustering is quadratic: each of N queries is searched against a block of all N,
+so cost fits `N * (0.137 + 4.4e-5 * N)` seconds per core, measured. `flags_collapse`
+runs MMseqs2 first, clusters only the representatives, and gives every member its
+representative's family.
+
+It is **opt-in and never automatic**. A size threshold that silently switched
+algorithms would make two runs disagree with nothing in the output explaining why,
+and the whole point of `_collapse.tsv` is that every propagated family assignment
+is traceable: member to representative there, representative to evidence in
+`_jackhits.tsv`.
+
+Two things about the ratio are worth knowing before reaching for it. First,
+`extractor.sequences` is keyed by accession, so RefSeq's own non-redundancy
+already collapses proteins identical across genomes -- MMseqs2 only recovers the
+band between the identity cutoff and 100%. Second, the gain is smaller than the
+quadratic curve suggests: measured collapse on real flanking proteins was 1.00x
+at 90% identity and 1.17x at 50%, because those genomes were different species.
+The neighbourhood size (`-g` versus `-r`) remains by far the larger lever.
+
+Collapsing can **split** a family as well as merge one. A sequence that would have
+bridged two groups is never searched once it is folded into a representative, so
+the bridge is lost. At 90%/80% on real data the families came out identical to an
+uncollapsed run; at 50% they did not -- 533 families against 528, with 71 of 950
+proteins landing somewhere different. That is the reason the default is 0.9,0.8
+and the reason the flag takes the numbers explicitly.
+
+A missing MMseqs2 is a hard error rather than the usual degrade-and-continue,
+which is a deliberate exception. Every other optional tool adds a layer; this one
+changes what the core stage costs, and quietly falling back to an uncollapsed run
+means a job the user expected to take an hour runs for days instead. The error
+prints the estimate so the choice is informed.
+
 ---
 
 ## Tree building

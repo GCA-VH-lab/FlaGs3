@@ -72,6 +72,10 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.4.0** — optional MMseqs2 collapsing before clustering for very large runs,
+and connected components are taken on a symmetrised graph so a protein can no
+longer land in two families
+
 **1.3.0** — neighbourhoods can be defined as a distance in bases rather than a
 number of genes, with a per-row report of what each contig could actually
 supply, and a separate span for the scanning tools

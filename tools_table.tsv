@@ -7,3 +7,4 @@ signalp	/home/fed/miniconda3/envs/flags3-signalp/bin/signalp6 --fastafile {fasta
 sismis	sismis run -g {in} -o {out}	
 trimal	trimal -in {in} -out {out} -fasta {mode}	
 veryfasttree	VeryFastTree {in}	
+mmseqs	/home/fed/Work/FlaGs3/mmseqs/bin/mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} -c {cov} --cov-mode 0 --threads {threads} -v 1	

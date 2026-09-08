@@ -32,6 +32,19 @@ def feature_defaults():
 DEFAULT_HMMDB = "./pfam_db/Pfam-A.hmm"
 
 
+def parse_collapse(spec):
+	parts = [p for p in str(spec).split(",") if p.strip()]
+	try:
+		nums = [float(p) for p in parts]
+	except ValueError:
+		raise ValueError("--cluster_collapse expects fractions, got {!r}".format(spec))
+	if not nums or len(nums) > 2 or any(not 0 < n <= 1 for n in nums):
+		raise ValueError(
+			"--cluster_collapse takes an identity and optionally a coverage, "
+			"each above 0 and at most 1, got {!r}".format(spec))
+	return (nums[0], nums[1] if len(nums) > 1 else 0.8)
+
+
 def parse_coverage(specs):
 	out = {}
 	for spec in specs or []:
@@ -914,8 +927,14 @@ class NeighborhoodClusterer:
 
 	@staticmethod
 	def _connected_components(adjacency: Dict[str, set]) -> List[List[str]]:
+		symmetric: Dict[str, set] = {node: set() for node in adjacency}
+		for node, hits in adjacency.items():
+			for hit in hits:
+				if hit in symmetric:
+					symmetric[node].add(hit)
+					symmetric[hit].add(node)
 		seen, families = set(), []
-		for node in adjacency:
+		for node in symmetric:
 			if node in seen:
 				continue
 			stack, component = [node], set()
@@ -925,7 +944,7 @@ class NeighborhoodClusterer:
 					continue
 				component.add(x)
 				seen.add(x)
-				stack.extend(adjacency.get(x, set()) - component)
+				stack.extend(symmetric.get(x, set()) - component)
 			families.append(sorted(component))
 		families.sort(key=len, reverse=True)
 		return families
@@ -1185,7 +1204,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1359,6 +1378,7 @@ def build_parser():
 	parser.add_argument("-nc", "--no_cross_db", action="store_true", help=" Keep protein and genome in the same database: RefSeq proteins (WP_, NP_, ...) resolve only to GCF_ assemblies and INSDC proteins only to GCA_. Proteins whose only assemblies are in the other database are then reported as unresolved. Does not affect assemblies given explicitly in the input file. ")
 	parser.add_argument("-e", "--ethreshold", type=float, default=1e-3, help=" Jackhmmer inclusion E-value threshold for clustering flanking genes. Default = 1e-3 ")
 	parser.add_argument("-n", "--number", type=int, default=3, help=" Number of jackhmmer iterations for clustering. Default = 3 ")
+	parser.add_argument("-cc", "--cluster_collapse", nargs="?", const="0.9,0.8", metavar="ID[,COV]", help=" Collapse near-identical flanking proteins with MMseqs2 before clustering, run jackhmmer on the representatives only, and give every member its representative's family. Clustering cost grows with the square of the number of proteins, so this is what makes a run of thousands of queries finish. Takes a minimum sequence identity and optionally a coverage, both fractions; bare -cc means 0.9,0.8, which only merges sequences jackhmmer would certainly have joined. Every representative and its members are written to <dir>_collapse.tsv. Needs mmseqs on PATH; run mmseqs_installer.sh. ")
 	parser.add_argument("-c", "--cpu", type=int, help=" Max parallel CPU workers (default: auto-detect). ")
 	parser.add_argument("-tmp", "--temporary", default="./genomes", help=" Temporary directory for downloaded assemblies; deleted at the end. Default = ./genomes ")
 	parser.add_argument("-o", "--output", default="output", help=" Directory for result files; its name is also the file prefix. A YYYYMMDD_HHMMSS stamp of the run start is appended, so repeated runs do not overwrite each other. Default = output ")
@@ -1646,7 +1666,7 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 
 def print_summary(args, prefix, extractor, families, rna_families, figures_written,
 				  tree_written, want_tree, domain_table_written, features, sismis_mod,
-				  blast_hits):
+				  blast_hits, collapse_written=False):
 	print("\n{} -> {}".format(
 		plural(len(extractor.sequences), "flanking protein"),
 		plural(len(families) - len(rna_families), "family", "families")))
@@ -1672,6 +1692,8 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 		print("  {}{}".format(prefix, suffix))
 	if extractor.ranges:
 		print("  {}_rangeReport.tsv".format(prefix))
+	if collapse_written:
+		print("  {}_collapse.tsv".format(prefix))
 	if flags_log.transcript_path():
 		print("  {}_console.log".format(prefix))
 	for suffix in getattr(args, "input_copies", []):
@@ -1721,6 +1743,11 @@ def main():
 		sys.exit("Error: --scan_range must be a positive number of bases.")
 	if args.gene < 0:
 		sys.exit("Error: --gene cannot be negative.")
+	if args.cluster_collapse:
+		try:
+			args.cluster_collapse = parse_collapse(args.cluster_collapse)
+		except ValueError as e:
+			sys.exit("Error: {}".format(e))
 
 	if not args.no_timestamp:
 		args.output = "{}_{}".format(os.path.normpath(args.output),
@@ -1938,11 +1965,52 @@ def main():
 				 "See {} for per-query details.".format(issues_path))
 
 	t0 = time.perf_counter()
+	collapse_mod, collapse_result = None, None
+	cluster_input = extractor.sequences
+	if args.cluster_collapse:
+		import flags_collapse as collapse_mod
+		ident, cov = args.cluster_collapse
+		collapser = collapse_mod.Collapser(min_seq_id=ident, coverage=cov,
+										   threads=args.cpu or 0)
+		ok, where = collapser.available()
+		if not ok:
+			sys.exit(
+				"Error: --cluster_collapse needs MMseqs2 and {}.\n"
+				"Run mmseqs_installer.sh to install it, or drop --cluster_collapse "
+				"-- but note that clustering {} proteins without collapsing is "
+				"estimated at {} on {}.".format(
+					where, len(extractor.sequences),
+					collapse_mod.format_estimate(len(extractor.sequences), args.cpu),
+					plural(args.cpu or 1, "worker")))
+		if args.verbose:
+			print(">> collapsing {} flanking proteins at {:.0%} identity / {:.0%} "
+				  "coverage ({})...".format(len(extractor.sequences), ident, cov,
+										    where), flush=True)
+		try:
+			collapse_result = collapser.collapse(extractor.sequences)
+		except (OSError, RuntimeError) as e:
+			sys.exit("Error: MMseqs2 collapsing failed ({}).".format(e))
+		cluster_input = collapse_result.representatives
+		timings["5a_collapse"] = time.perf_counter() - t0; t0 = time.perf_counter()
+		before, after = len(extractor.sequences), len(cluster_input)
+		print(">> collapsed {} proteins into {} representatives ({:.2f}x); "
+			  "clustering the representatives".format(before, after,
+													  before / max(after, 1)))
+		print(">> estimated clustering: {} instead of {} on {}".format(
+			collapse_mod.format_estimate(after, args.cpu),
+			collapse_mod.format_estimate(before, args.cpu),
+			plural(args.cpu or 1, "worker")))
 	if args.verbose:
-		print(">> clustering {} flanking proteins...".format(len(extractor.sequences)), flush=True)
+		print(">> clustering {} flanking proteins...".format(len(cluster_input)), flush=True)
 	clusterer = NeighborhoodClusterer(iterations=args.number, incE=args.ethreshold,
 									  workers=args.cpu)
-	families = clusterer.cluster(extractor.sequences)
+	families = clusterer.cluster(cluster_input)
+	if collapse_result:
+		rep_families = len(families)
+		families = collapse_mod.expand(families, collapse_result.members)
+		if args.verbose:
+			print(">> expanded {} representative families to cover {} proteins".format(
+				rep_families, sum(len(f) for f in families)), flush=True)
 
 	rna_families = []
 	if args.cluster_rna:
@@ -2054,6 +2122,9 @@ def main():
 							row_sequences=extractor.row_sequences,
 							ranges=extractor.ranges, requested=args.range)
 	n_issues = reporter.write_all(out_path)
+	if collapse_result:
+		collapse_mod.write_report(collapse_result, out_path("_collapse.tsv"),
+								  reporter.fam_of)
 	if blast_hits:
 		blast_mod.write_report(blast_hits, blast_queries[0],
 							   out_path("_blast_hits.tsv"))
@@ -2096,7 +2167,7 @@ def main():
 
 	print_summary(args, prefix, extractor, families, rna_families, figures_written,
 				  tree_written, want_tree, domain_table_written, features,
-				  sismis_mod, blast_hits)
+				  sismis_mod, blast_hits, collapse_written=bool(collapse_result))
 	if args.verbose:
 		print("\n--- timing (seconds) ---")
 		for stage in sorted(timings):

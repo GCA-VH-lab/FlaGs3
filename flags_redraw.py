@@ -387,6 +387,19 @@ def _feature_kind(kind: str) -> str:
 	return "tmhmm"
 
 
+EDITOR_LIMIT = 16383   # Illustrator's largest canvas, and librsvg's, in px
+
+
+def _oversize(svg: str):
+	m = re.search(r'width="([\d.]+)" height="([\d.]+)"', svg[:400])
+	if not m:
+		return None
+	w, h = float(m.group(1)), float(m.group(2))
+	if max(w, h) <= EDITOR_LIMIT:
+		return None
+	return int(w), int(h)
+
+
 def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
 			   pdf=False):
 	"""Render every spec. Returns the list of figure names actually written."""
@@ -403,6 +416,12 @@ def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
 			continue
 		with open(out_path("_{}.svg".format(spec.name)), "w") as out:
 			out.write(svg)
+		big = _oversize(svg)
+		if big:
+			print("Warning: figure {!r} is {}x{} px, past the {} px canvas limit of "
+				  "Illustrator and librsvg. Browsers will still open it. Raise "
+				  "bases_per_pixel or lower row_height in the figure table, or draw "
+				  "fewer rows.".format(spec.name, big[0], big[1], EDITOR_LIMIT))
 		written.append(spec.name)
 	if pdf and written:
 		import flags_pdf

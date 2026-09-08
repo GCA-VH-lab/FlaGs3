@@ -110,7 +110,59 @@ downloads. The cap is 5/s, or 10/s when an NCBI API key is supplied.
 ## Extraction
 
 `NeighborhoodExtractor` parses GFF and FASTA into gene records, then takes a
-window of `±flank` genes around the query.
+window around the query: `±flank` genes by default, or every gene within
+`±range_bp` bases under `-r`.
+
+### Two ways to size a window
+
+`_window` returns a pair of indices either way, so everything downstream is
+unchanged -- `offset` stays **ordinal** (the n-th gene from the query, sign
+flipped on the minus strand), not a distance. That is what lets `-r` cost the
+renderers nothing: `classic` and `triangles` lay genes out on an offset grid and
+simply get wider, while `versatile` was already drawing to genomic scale.
+
+Range mode walks outwards from the query index rather than bisecting, because the
+window is contiguous around a known point. Walking left cannot stop at the first
+gene whose end falls short of the boundary: a gene nested inside a longer
+neighbour would cut the window early. `_reach` is a per-contig prefix maximum of
+`end`, so the walk stops only when *no* earlier gene on that contig can reach the
+boundary. Walking right needs no such array, since genes are sorted by `start`.
+Both arrays are built once per assembly in `_genes` and cached with it; range
+extraction measured the same as gene extraction on real genomes.
+
+A gene straddling the boundary is included, so `up_reached` routinely exceeds the
+requested distance by part of one gene. That is the point: a gene half inside the
+window is context, not noise.
+
+### The range report
+
+Contig lengths come from the `##sequence-region` pragma, read in the same pass
+that parses the features -- the parser used to drop every `#` line. `region`
+features are a second source, and the longest gene end on the contig is the
+fallback for annotations carrying neither. The fallback under-reports, so a
+Prokka genome with no pragma can show truncation that is not there; it reports
+what the file actually says rather than guessing.
+
+`up`/`down` in `_rangeReport.tsv` are in **query orientation**, flipped with the
+query strand exactly as `offset` is. Genomic left/right would make "20000 up and
+5000 down" mean nothing biologically, which is the whole reason the report exists.
+
+Every row is written, not only the truncated ones, because the same table answers
+"how many genes did this row actually get" -- the question that comes up as soon
+as two rows in a figure are different widths.
+
+### Scanning span is separate from neighbourhood size
+
+`-sr` exists because clustering cost is quadratic in the number of genes drawn
+while the scanning tools take a genomic interval and do not care how many genes
+are in it. On real data, ±50 kb holds about 85 genes against 9 at `-g 4`, which
+is roughly 80x the clustering time; `-g 5 -sr 50000` clusters 11 genes and still
+hands the tools 100 kb. Without the split, wide tool context and affordable
+clustering are mutually exclusive.
+
+`RangeInfo.scan_start`/`scan_end` are computed at extraction time and clipped to
+the contig, so the tools receive an interval that is already known to exist. When
+`-sr` is absent the scan window is the neighbourhood's own genomic span.
 
 The GFF parser handles two annotation styles without being told which it has:
 

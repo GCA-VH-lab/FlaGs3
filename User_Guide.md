@@ -150,9 +150,33 @@ Used only with `--blast_input`. See [Starting from one protein](#starting-from-o
 
 ### What gets analysed
 
+`-g` and `-r` are two ways to say how big a neighbourhood is, and `-r` wins when
+both are given. `-g 4` takes four genes either side whatever the distance; `-r
+50000` takes everything within 50 kb whatever the gene count, which on a typical
+bacterial genome is around 85 genes.
+
+That difference is not free. Clustering compares every flanking protein against
+every other, so its cost grows with the *square* of how many genes you take:
+about 80x going from `-g 4` to `-r 50000`. On a large input that is the
+difference between an hour and a fortnight.
+
+`-sr` is the way out. The scanning tools take a genomic interval and do not care
+how many genes are in it, so the span they see can be set independently of the
+neighbourhood:
+
+```
+-g 5 -sr 50000
+```
+
+clusters and draws 11 genes per row while still giving the tools 100 kb of
+context around each query. Use `-r` when you want the whole island coloured and
+the input is small enough; use `-g` with `-sr` when it is not.
+
 | Option | Default | Description |
 |---|---|---|
 | `-g`, `--gene N` | `4` | Flanking genes to take each side of the query. |
+| `-r`, `--range BP` | off | Take every gene within this many bases of the query gene instead of a fixed count. Measured outwards from the query gene's own start and end; a gene straddling the edge is included, so the distance reached usually overshoots by part of one gene. Overrides `-g`. |
+| `-sr`, `--scan_range BP` | neighbourhood span | Genomic span around the query handed to the scanning tools, independent of how many genes are clustered and drawn. |
 | `-e`, `--ethreshold X` | `1e-3` | Inclusion E-value for clustering. Lower is stricter, giving more and smaller families. |
 | `-n`, `--number N` | `3` | Jackhmmer iterations. More iterations find remoter homology but blur family boundaries. |
 | `-cr`, `--cluster_rna` | off | Also cluster flanking RNA genes into families. Uses nhmmer on RNA sequences where available, otherwise groups by product name. |
@@ -463,6 +487,7 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_secretion.tsv` | Sismis hits and which neighbourhoods they overlap (`--sismis`) |
 | `results_sismis_diagnostics.txt` | per-genome Sismis status: scanned, nothing found, or skipped and why (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
+| `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |
 | `results_console.log` | everything the run printed, plus the output of external tools that never reached the terminal |
 | `results_input.txt` | a copy of the input list, so the results stay self-contained |
 | `results_blast_hits.tsv` | BlastP hits used as queries: accession, E-value, bitscore, description |

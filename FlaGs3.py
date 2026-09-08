@@ -545,9 +545,31 @@ class FlankingGene(NamedTuple):
 	contig: str = ""       # contig/sequence id the gene lies on (for locus matching)
 
 
+class RangeInfo(NamedTuple):
+	row: str
+	query: str
+	assembly: str
+	contig: str
+	contig_length: int
+	q_start: int
+	q_end: int
+	q_strand: str
+	up_available: int      # bp of contig upstream of the query, in query orientation
+	down_available: int
+	up_reached: int        # bp actually spanned by the extracted genes
+	down_reached: int
+	genes_up: int
+	genes_down: int
+	scan_start: int
+	scan_end: int
+
+
 class NeighborhoodExtractor: 
-	def __init__(self, flank: int = 4, label_assembly: bool = False):
+	def __init__(self, flank: int = 4, label_assembly: bool = False,
+				 range_bp: Optional[int] = None, scan_range: Optional[int] = None):
 		self.flank = flank
+		self.range_bp = range_bp
+		self.scan_range = scan_range
 		self.label_assembly = label_assembly
 		self.sequences: Dict[str, str] = {}        # all flanking proteins: accession -> sequence
 		self.query_sequences: Dict[str, str] = {}  # query proteins only: accession -> sequence
@@ -556,10 +578,14 @@ class NeighborhoodExtractor:
 		self.rna_products: Dict[str, str] = {}     # flanking RNAs: accession -> product name
 		self.species: Dict[str, str] = {}          # row id -> organism name
 		self.row_label: Dict[str, str] = {}        # row id -> display label
+		self.ranges: Dict[str, RangeInfo] = {}     # row id -> window actually obtained
 		self._gff_cache: Dict[str, List[dict]] = {}
 		self._faa_cache: Dict[str, Dict[str, Tuple[str, str]]] = {}
 		self._rna_cache: Dict[str, Dict[str, str]] = {}
 		self._genome_cache: Tuple[Optional[str], Dict[str, str]] = (None, {})
+		self._contig_len: Dict[str, Dict[str, int]] = {}
+		self._contig_span: Dict[str, Dict[str, Tuple[int, int]]] = {}
+		self._reach: Dict[str, List[int]] = {}
 
 	def extract(self, assembly: str, gff_path: str, faa_path: str,
 				query: str, acceptable: Optional[set] = None,
@@ -575,7 +601,7 @@ class NeighborhoodExtractor:
 		rna = self._rna(assembly, rna_path) if rna_path else {}
 		contig = genes[idx]["contig"]
 		qstrand = genes[idx]["strand"]
-		lo, hi = max(0, idx - self.flank), min(len(genes), idx + self.flank + 1)
+		lo, hi = self._window(assembly, genes, idx, contig)
 		q_acc = genes[idx]["accession"]
 		q_organism = faa.get(q_acc, (None, ""))[1]
 		row_id = "{}|{}".format(query, assembly)
@@ -619,7 +645,56 @@ class NeighborhoodExtractor:
 				is_rna=g["is_rna"],
 				contig=g["contig"],
 			))
+		if neighborhood:
+			self.ranges[row_id] = self._range_info(
+				row_id, query, assembly, genes, idx, contig, qstrand, neighborhood)
 		return neighborhood
+
+	def _window(self, assembly: str, genes: List[dict], idx: int,
+				contig: str) -> Tuple[int, int]:
+		c_lo, c_hi = self._contig_span.get(assembly, {}).get(
+			contig, (0, len(genes)))
+		if not self.range_bp:
+			return max(c_lo, idx - self.flank), min(c_hi, idx + self.flank + 1)
+		lo_bp = genes[idx]["start"] - self.range_bp
+		hi_bp = genes[idx]["end"] + self.range_bp
+		reach = self._reach.get(assembly) or []
+		lo = idx
+		while lo > c_lo and (reach[lo - 1] if reach else genes[lo - 1]["end"]) >= lo_bp:
+			lo -= 1
+		hi = idx + 1
+		while hi < c_hi and genes[hi]["start"] <= hi_bp:
+			hi += 1
+		return lo, hi
+
+	def _range_info(self, row_id, query, assembly, genes, idx, contig,
+					qstrand, neighborhood) -> RangeInfo:
+		q = genes[idx]
+		length = self._contig_len.get(assembly, {}).get(contig)
+		if not length:
+			c_lo, c_hi = self._contig_span.get(assembly, {}).get(contig, (0, len(genes)))
+			length = max((g["end"] for g in genes[c_lo:c_hi]), default=q["end"])
+		left_avail, right_avail = q["start"] - 1, max(0, length - q["end"])
+		lo_bp = min(g.start for g in neighborhood)
+		hi_bp = max(g.end for g in neighborhood)
+		left_reach, right_reach = q["start"] - lo_bp, hi_bp - q["end"]
+		before = sum(1 for g in neighborhood if g.offset < 0)
+		after = sum(1 for g in neighborhood if g.offset > 0)
+		if qstrand == "-":
+			left_avail, right_avail = right_avail, left_avail
+			left_reach, right_reach = right_reach, left_reach
+		span = self.scan_range
+		if span is None:
+			scan_start, scan_end = lo_bp, hi_bp
+		else:
+			scan_start, scan_end = q["start"] - span, q["end"] + span
+		return RangeInfo(
+			row=row_id, query=query, assembly=assembly, contig=contig,
+			contig_length=length, q_start=q["start"], q_end=q["end"],
+			q_strand=qstrand, up_available=left_avail, down_available=right_avail,
+			up_reached=left_reach, down_reached=right_reach,
+			genes_up=before, genes_down=after,
+			scan_start=max(1, scan_start), scan_end=min(length, scan_end))
 
 	@staticmethod
 	def _open(path: str):
@@ -631,15 +706,29 @@ class NeighborhoodExtractor:
 		if assembly in self._gff_cache:
 			return self._gff_cache[assembly]
 		genes = []
+		lengths: Dict[str, int] = {}
 		with self._open(gff_path) as fh:
 			for raw in fh:
 				if raw.startswith("#"):
+					if raw.startswith("##sequence-region"):
+						parts = raw.split()
+						if len(parts) >= 4:
+							try:
+								lengths[parts[1]] = int(parts[3])
+							except ValueError:
+								pass
 					continue
 				col = raw.rstrip("\n").split("\t")
 				if len(col) < 9:
 					continue
 				feature, attrs = col[2], col[8]
-				if feature.endswith("gene"):
+				if feature == "region":
+					if col[0] not in lengths:
+						try:
+							lengths[col[0]] = int(col[4])
+						except ValueError:
+							pass
+				elif feature.endswith("gene"):
 					genes.append(self._record(col, None, "",
 						biotype=self._attr(attrs, "gene_biotype") or "",
 						locus_tag=self._attr(attrs, "locus_tag") or "", is_rna=False))
@@ -680,6 +769,21 @@ class NeighborhoodExtractor:
 				g["accession"] = (g["biotype"] or "noProtein") + "*"
 
 		genes.sort(key=lambda g: (g["contig"], g["start"]))
+		spans: Dict[str, Tuple[int, int]] = {}
+		reach: List[int] = []
+		best = 0
+		for i, g in enumerate(genes):
+			c = g["contig"]
+			if c in spans:
+				spans[c] = (spans[c][0], i + 1)
+				best = max(best, g["end"])
+			else:
+				spans[c] = (i, i + 1)
+				best = g["end"]
+			reach.append(best)
+		self._contig_len[assembly] = lengths
+		self._contig_span[assembly] = spans
+		self._reach[assembly] = reach
 		self._gff_cache[assembly] = genes
 		return genes
 
@@ -869,7 +973,10 @@ class RnaClusterer:
 class ReportWriter: 
 	def __init__(self, neighborhoods, families, species,
 				 queries, protein_to_assemblies, matched,
-				 order=None, adjacency=None, sequences=None, row_sequences=None):
+				 order=None, adjacency=None, sequences=None, row_sequences=None,
+				 ranges=None, requested=None):
+		self.ranges = ranges or {}
+		self.requested = requested
 		self.neighborhoods = neighborhoods
 		self.families = families
 		self.species = species
@@ -903,6 +1010,8 @@ class ReportWriter:
 		self.query_status(out_path("_QueryStatus.txt"))
 		self.flankgene_report(out_path("_flankgene_Report.log"))
 		self.fasta_outputs(out_path)
+		if self.ranges:
+			self.range_report(out_path("_rangeReport.tsv"))
 		if self.adjacency:
 			self.jackhits_tsv(out_path("_jackhits.tsv"))
 		return self.accession_issues(out_path("_accessionIssues.txt"))
@@ -964,6 +1073,36 @@ class ReportWriter:
 		self._write_fasta(out_path("_all.fasta"),
 						  [(row, self.row_sequences[row]) for row in self.row_sequences]
 						  + [(label(a), self.sequences[a]) for a in flanking])
+
+	def range_report(self, path):
+		want = self.requested
+		with open(path, "w") as out:
+			out.write("#query\tassembly\tcontig\tcontig_length\tquery_start\t"
+					  "query_end\tquery_strand\trequested_bp\tup_available\t"
+					  "down_available\tup_reached\tdown_reached\ttruncated\t"
+					  "genes_up\tgenes_down\tgenes_total\tscan_start\tscan_end\t"
+					  "scan_span\n")
+			for row_id in self.by_query:
+				info = self.ranges.get(row_id)
+				if info is None:
+					continue
+				sides = []
+				if want:
+					if info.up_available < want:
+						sides.append("up")
+					if info.down_available < want:
+						sides.append("down")
+				out.write("\t".join(str(v) for v in (
+					info.query, info.assembly or "-", info.contig or "-",
+					info.contig_length, info.q_start, info.q_end, info.q_strand,
+					want if want else "-",
+					info.up_available, info.down_available,
+					info.up_reached, info.down_reached,
+					",".join(sides) if sides else "-",
+					info.genes_up, info.genes_down,
+					info.genes_up + info.genes_down + 1,
+					info.scan_start, info.scan_end,
+					info.scan_end - info.scan_start + 1)) + "\n")
 
 	@staticmethod
 	def _write_fasta(path, records):
@@ -1046,7 +1185,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1214,6 +1353,8 @@ def build_parser():
 	parser.add_argument("-u", "--user_email", required=True, help=" User Email Address (required by NCBI Entrez). ")
 	parser.add_argument("-api", "--api_key", help=" NCBI API Key. ")
 	parser.add_argument("-g", "--gene", type=int, default=4, help=" Number of flanking genes up/downstream. Default = 4 ")
+	parser.add_argument("-r", "--range", type=int, metavar="BP", help=" Take the neighbourhood as every gene within this many bases of the query gene, instead of a fixed number of genes. Measured outwards from the query gene's own start and end, and a gene straddling the edge is included. Overrides -g. Contigs shorter than the window are reported in <dir>_rangeReport.tsv rather than silently truncated. ")
+	parser.add_argument("-sr", "--scan_range", type=int, metavar="BP", help=" Genomic span around the query gene handed to the scanning tools (Sismis, and later geNomad, DefenseFinder, PadLoc), independent of how many genes are clustered and drawn. Use it to give those tools wide context while keeping the neighbourhood itself small: -g 5 -sr 50000 clusters 11 genes and scans 100 kb. Default: the span of the extracted neighbourhood. ")
 	parser.add_argument("-m", "--max_assemblies", type=int, default=1, help=" Max assemblies per protein. Default = 1 ")
 	parser.add_argument("-nc", "--no_cross_db", action="store_true", help=" Keep protein and genome in the same database: RefSeq proteins (WP_, NP_, ...) resolve only to GCF_ assemblies and INSDC proteins only to GCA_. Proteins whose only assemblies are in the other database are then reported as unresolved. Does not affect assemblies given explicitly in the input file. ")
 	parser.add_argument("-e", "--ethreshold", type=float, default=1e-3, help=" Jackhmmer inclusion E-value threshold for clustering flanking genes. Default = 1e-3 ")
@@ -1529,6 +1670,8 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 				   "_accessionIssues.txt", "_tree.fasta", "_flankgene.fasta", "_all.fasta",
 				   "_runinfo.txt"):
 		print("  {}{}".format(prefix, suffix))
+	if extractor.ranges:
+		print("  {}_rangeReport.tsv".format(prefix))
 	if flags_log.transcript_path():
 		print("  {}_console.log".format(prefix))
 	for suffix in getattr(args, "input_copies", []):
@@ -1572,6 +1715,12 @@ def main():
 		sys.exit("Error: {}".format(e))
 	if args.clans and not os.path.isfile(args.clans):
 		sys.exit("Error: --clans file not found: {}".format(args.clans))
+	if args.range is not None and args.range < 1:
+		sys.exit("Error: --range must be a positive number of bases.")
+	if args.scan_range is not None and args.scan_range < 1:
+		sys.exit("Error: --scan_range must be a positive number of bases.")
+	if args.gene < 0:
+		sys.exit("Error: --gene cannot be negative.")
 
 	if not args.no_timestamp:
 		args.output = "{}_{}".format(os.path.normpath(args.output),
@@ -1736,7 +1885,8 @@ def main():
 			for key, msg in list(failures.items())[:5]:
 				print("     {}: {}".format(key.rsplit("/", 1)[-1] or key, msg), flush=True)
 
-	extractor = NeighborhoodExtractor(flank=args.gene,
+	extractor = NeighborhoodExtractor(flank=args.gene, range_bp=args.range,
+									  scan_range=args.scan_range,
 									  label_assembly=args.max_assemblies > 1)
 	all_neighborhoods = []
 	matched = set()  
@@ -1760,6 +1910,13 @@ def main():
 	if args.verbose:
 		print(">> extracted {} flanking-gene records; {} of {} queries matched".format(
 			len(all_neighborhoods), len(matched), len(all_queries)), flush=True)
+	if args.range and extractor.ranges:
+		short = [r for r in extractor.ranges.values()
+				 if r.up_available < args.range or r.down_available < args.range]
+		if short:
+			print("Note: {} of {} rows sit closer than {} bp to a contig end, so their "
+				  "window is truncated; see <prefix>_rangeReport.tsv.".format(
+					  len(short), len(extractor.ranges), args.range))
 
 	scans = run_background_scans(args, extractor, downloaded, all_neighborhoods,
 								 timings)
@@ -1894,7 +2051,8 @@ def main():
 							all_queries, protein_to_assemblies, matched,
 							order=order, adjacency=adjacency,
 							sequences=extractor.sequences,
-							row_sequences=extractor.row_sequences)
+							row_sequences=extractor.row_sequences,
+							ranges=extractor.ranges, requested=args.range)
 	n_issues = reporter.write_all(out_path)
 	if blast_hits:
 		blast_mod.write_report(blast_hits, blast_queries[0],

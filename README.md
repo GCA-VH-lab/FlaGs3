@@ -72,6 +72,10 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**1.3.0** — neighbourhoods can be defined as a distance in bases rather than a
+number of genes, with a per-row report of what each contig could actually
+supply, and a separate span for the scanning tools
+
 **1.2.0** — every line the run prints is also saved as `<prefix>_console.log`,
 including the output of external tools that never reached the terminal
 

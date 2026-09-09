@@ -5,7 +5,13 @@ set -e
 ENV_NAME="flags3-signalp"
 PY_VERSION="3.9"
 PACKAGE="$1"
-TOOLS_TABLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools_table.tsv"
+TOOLS_TABLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools_table.local.tsv"
+
+# Installers write here, never to the committed tools_table.tsv, so machine
+# paths stay out of the repository.
+if [[ ! -f "${TOOLS_TABLE}" ]]; then
+    printf '#name\tcommand\tdirectory\tscan_range\n' > "${TOOLS_TABLE}"
+fi
 
 if [[ -z "${PACKAGE}" ]]; then
     cat <<'USAGE'
@@ -126,7 +132,7 @@ open(path, "w").writelines(rows)
 print("  updated the signalp row of {}".format(path))
 PY
 else
-    echo "  add this row to tools_table.tsv:"
+    echo "  add this row to tools_table.local.tsv:"
     printf '    signalp\t%s\t\n' "${CMD}"
 fi
 

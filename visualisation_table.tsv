@@ -3,6 +3,8 @@ neighbors	versatile	False	cluster_rna	TRUE	14	24	8	default	12.0	16	6	16	default	
 tree	triangles	1	cluster_rna	TRUE	14	24	20	1	False	16	default	default	default	default	default
 domains	versatile	False	cluster_rna,domains,tmhmm,signalp	FALSE	14	24	8	default	12.0	16	6	16	default	default	default
 sismis	versatile	False	sismis,monochrome	FALSE	14	24	8	default	12.0	16	6	16	default	default	0.28
+genomad	versatile	False	genomad,monochrome	FALSE	14	24	8	default	12.0	16	6	16	default	default	0.28
+defence	versatile	False	defence,monochrome	FALSE	14	24	8	default	12.0	16	6	16	default	default	0.28
 classic	classic	False	cluster_rna	TRUE	14	20	15	default	16.0	16	6	16	12	12	default
-all-in-one	versatile	1	cluster_rna,domains,tmhmm,signalp,sismis	TRUE	14	24	8	default	12.0	16	6	16	default	default	default
+all-in-one	versatile	1	cluster_rna,domains,tmhmm,signalp,sismis,genomad,defence	TRUE	14	24	8	default	12.0	16	6	16	default	default	default
 tree_classic	classic	1	cluster_rna	TRUE	14	20	15	default	16.0	16	6	16	12	12	default

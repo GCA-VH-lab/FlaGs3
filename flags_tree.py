@@ -32,6 +32,11 @@ class TreeBuilder:
   @classmethod
   def _run(cls, cmd, **kwargs):
     cls._debug("running: {}".format(" ".join(str(c) for c in cmd)))
+    if "env" not in kwargs:
+      import flags_tools
+      env = flags_tools.env_for(cmd)
+      if env:
+        kwargs["env"] = env
     try:
       result = subprocess.run(cmd, **kwargs)
     except subprocess.CalledProcessError as e:

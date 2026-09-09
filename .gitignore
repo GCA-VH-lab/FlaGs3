@@ -1,13 +1,22 @@
 __pycache__/
 *.pyc
+*.lock
+*.diff
+
+# machine-specific tool paths, written by the installers
+tools_table.local.tsv
+
+# databases and tools fetched by the loaders and installers
 pfam_db/
+defence_db/
 defence_db_*/
+genomad_db/
+mmseqs/
 deeptmhmm/
 signalp-6-package/
-*.lock
+
+# genome cache, and anything --temporary points at
 genomes/
-*.diff
-mmseqs/
 
 # run outputs: <name>_YYYYMMDD_HHMMSS/
 *_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]/

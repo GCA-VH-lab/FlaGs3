@@ -24,7 +24,9 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ### Analysis
 
-* Flanking-gene extraction with a configurable window
+* Flanking-gene extraction by gene count or by distance in bases
+* Defence systems from DefenseFinder and PadLoc, proviruses and plasmids from
+  geNomad, and secretion systems from Sismis, drawn as labelled bands
 * All-vs-all clustering of neighbours into families with `pyhmmer` jackhmmer
 * Optional clustering of RNA genes alongside proteins
 * Phylogenetic trees from the query proteins: MAFFT alignment, gap-threshold
@@ -72,9 +74,38 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
-**1.4.0** — optional MMseqs2 collapsing before clustering for very large runs,
-and connected components are taken on a symmetrised graph so a protein can no
-longer land in two families
+**2.0.0** — defence system and mobile element calling, windowed scanning, and
+the scale work needed to run all of it on thousands of genomes.
+
+Two changes affect existing output. Sismis' passthrough columns in
+`_secretion.tsv` are prefixed `sismis_`, because they collided with the
+normalised `start`/`end`/`type` and the renderer was reading the wrong ones.
+Family numbers, clusters and FASTA output are now ordered deterministically
+rather than following whatever order the input arrived in.
+
+* `-df` / `-pl` call defence systems with DefenseFinder and PadLoc, drawn as
+  bands labelled `D1`, `D2` with the names in a legend split by which tool
+  called them
+* `-gn` finds proviruses and plasmids with geNomad, each labelled with what it
+  was actually called rather than a generic label
+* `-sm` pads a scan window so a system at its edge is called whole and marked
+  partial rather than dropped
+* Sismis and geNomad are invoked once for many genomes rather than once each;
+  their cost is dominated by loading a database, so this is the difference
+  between hours and weeks on a large input
+* Parsed genomes are freed as soon as they are finished with, cutting retained
+  memory 226x on a large input
+* DefenseFinder and PadLoc see every gene within `-sr` of the query rather than
+  only the drawn neighbourhood, so a system reaching past the figure is still
+  called whole
+* Installers for MMseqs2, geNomad, DefenseFinder and PadLoc, all wired into
+  `build.sh`, none needing a user-supplied package
+* Machine-specific tool paths go to a git-ignored `tools_table.local.tsv`, and
+  `tools_table.tsv` keeps the shipped defaults
+
+**1.4.0** — optional MMseqs2 collapsing before clustering, and connected
+components taken on a symmetrised graph so a protein can no longer land in two
+families
 
 **1.3.0** — neighbourhoods can be defined as a distance in bases rather than a
 number of genes, with a per-row report of what each contig could actually

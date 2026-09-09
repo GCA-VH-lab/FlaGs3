@@ -177,6 +177,11 @@ the input is small enough; use `-g` with `-sr` when it is not.
 | `-g`, `--gene N` | `4` | Flanking genes to take each side of the query. |
 | `-r`, `--range BP` | off | Take every gene within this many bases of the query gene instead of a fixed count. Measured outwards from the query gene's own start and end; a gene straddling the edge is included, so the distance reached usually overshoots by part of one gene. Overrides `-g`. |
 | `-sr`, `--scan_range BP` | neighbourhood span | Genomic span around the query handed to the scanning tools, independent of how many genes are clustered and drawn. |
+| `-sm`, `--scan_margin BP` | `10000` | Extra sequence given to the scanning tools beyond the analysis range, so a system straddling the edge is called whole rather than cut in half. Hits reaching into the margin are kept and marked `partial`. `0` scans exactly the analysis range. |
+| `-df`, `--defensefinder` | off | Call anti-phage defence systems with DefenseFinder, drawn as bands labelled with the system name. Needs `defensefinder_installer.sh`. |
+| `-pl`, `--padloc` | off | The same with PadLoc. Both can run together. Needs `padloc_installer.sh`. |
+| `-gn`, `--genomad` | off | Find proviruses and plasmids with geNomad, drawn as bands like Sismis'. Needs `genomad_installer.sh` then `genomad_loader.sh`. |
+| `-gdb`, `--genomad_db DIR` | from tools table | geNomad database directory. |
 | `-e`, `--ethreshold X` | `1e-3` | Inclusion E-value for clustering. Lower is stricter, giving more and smaller families. |
 | `-n`, `--number N` | `3` | Jackhmmer iterations. More iterations find remoter homology but blur family boundaries. |
 | `-cc`, `--cluster_collapse [ID[,COV]]` | off | Collapse near-identical flanking proteins with MMseqs2, cluster only the representatives, and give each member its representative's family. Bare `-cc` means `0.9,0.8`. Needs `mmseqs`; run `mmseqs_installer.sh`. |
@@ -331,6 +336,34 @@ database — `--blast_db` then takes the database name or path, and `-c/--cpu` s
 `-num_threads`. An accession is resolved to its sequence through NCBI first, so
 both modes accept the same input.
 
+### Reading the defence figure
+
+Defence systems are drawn as bands behind the genes they span, labelled `D1`,
+`D2` and so on rather than by name -- a row often carries several and the names
+do not fit. The legend gives the full name for each number, and is split by the
+tool that made the call, so a system under both DefenseFinder and PadLoc is one
+both agreed on. It keeps the same number and colour in both panels.
+
+Bands that overlap are stacked in separate lanes within the row. Three thin bars
+means three systems sharing that stretch, not one wide one.
+
+### Which flag controls which tool
+
+Tools split by what they read, and that decides which flag sizes them:
+
+| reads | tools | sized by |
+|---|---|---|
+| genes and proteins | domain scan, DeepTMHMM, SignalP, DefenseFinder, PadLoc | `-g` or `-r` |
+| a stretch of DNA | Sismis, geNomad | `-sr`, whole genome without it |
+
+So `-g 5 -sr 50000` clusters and draws 11 genes while Sismis and geNomad each see
+100 kb around the query. Without `-sr` those two scan whole genomes, as they did
+before.
+
+If one tool needs a different span, put a number in the `scan_range` column of
+`tools_table.tsv` for its row, or `genome` to give that one tool whole genomes.
+That column overrides `-sr` for that tool only.
+
 ### When to collapse before clustering
 
 Clustering compares every flanking protein against every other, so its cost grows
@@ -365,6 +398,21 @@ At the default the result was indistinguishable from not collapsing at all. At
 It is never switched on automatically, whatever the run size. If `mmseqs` is
 missing the run stops rather than quietly clustering everything, since that turns
 an hour into days with nothing in the output to say why.
+
+### Two tool tables
+
+`tools_table.tsv` holds the shipped defaults and is what the repository tracks.
+The installers never touch it. They write `tools_table.local.tsv` instead, which
+is git-ignored, and FlaGs3 reads the default table first and lets the local one
+override it row by row.
+
+That split exists so a path like
+`/home/you/miniconda3/envs/flags3-genomad/bin/genomad` stays on your machine
+instead of turning up in every diff. A row in the local table only needs the
+columns it changes; anything left blank falls back to the default.
+
+To see what is actually in effect, read both files, or run with `-dbg`, which
+records each external command as it runs.
 
 ## External tools
 
@@ -521,7 +569,11 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_accessionIssues.txt` | queries that produced nothing, and why |
 | `results_flankgene_Report.log` | each neighbourhood as a compact family chain |
 | `results_secretion.tsv` | Sismis hits and which neighbourhoods they overlap (`--sismis`) |
-| `results_sismis_diagnostics.txt` | per-genome Sismis status: scanned, nothing found, or skipped and why (`--sismis`) |
+| `results_defence.tsv` | each defence system, the genes it spans, which tool called it, and which neighbourhoods it overlaps (`--defensefinder`, `--padloc`) |
+| `results_defence_diagnostics.txt` | per-tool status and how many neighbourhoods were scanned |
+| `results_genomad.tsv` | geNomad's proviruses and plasmids, each labelled with what it was called, and which neighbourhoods it overlaps (`--genomad`) |
+| `results_genomad_diagnostics.txt` | per-genome geNomad status, windows scanned, and how much of the genome that came to (`--genomad`) |
+| `results_sismis_diagnostics.txt` | per-genome Sismis status, how many windows were scanned, and how much of the genome that came to (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
 | `results_collapse.tsv` | each MMseqs2 representative, its family, and its members, so a propagated family assignment can be traced back (`--cluster_collapse`) |
 | `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |
@@ -581,6 +633,21 @@ NCBI and EBI from rejecting the run.
 **The diagram is unexpectedly wide.**
 A neighbour lying very far from the query stretches the canvas. This normally
 means a fragmented assembly where the query sits near a contig edge.
+
+**geNomad says `Missing argument 'DATABASE'` or cannot read its database.**
+The path in the third column of the `genomad` row of `tools_table.tsv` must be
+the directory holding `genomad_marker_metadata.tsv`, not the directory holding
+*that*. `genomad download-database DEST` creates `DEST/genomad_db`, so the path
+you want is usually one level further in than the one you gave it. FlaGs3
+descends that level for you and says so, but the table is clearer if it points
+straight at the database.
+
+**A tool reports its own dependencies as missing.**
+Tools installed into a conda environment are run by absolute path, which does not
+activate that environment. FlaGs3 puts the tool's own directory on its `PATH` so
+sibling programs are found, but a dependency installed somewhere else entirely
+still will not be. Check it is in the same environment: `conda list -n
+flags3-genomad mmseqs2`.
 
 **A tool produced nothing and the warning does not say why.**
 Read `results_console.log`. External tools are run with their output captured,

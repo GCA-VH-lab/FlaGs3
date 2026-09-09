@@ -4,7 +4,14 @@ set -e
 
 ENV_NAME="flags3-mmseqs"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOLS_TABLE="${HERE}/tools_table.tsv"
+TOOLS_TABLE="${HERE}/tools_table.local.tsv"
+
+# Installers write here, never to the committed tools_table.tsv, so machine
+# paths stay out of the repository. FlaGs3 reads the default table first and
+# lets this one override it row by row.
+if [[ ! -f "${TOOLS_TABLE}" ]]; then
+    printf '#name\tcommand\tdirectory\tscan_range\n' > "${TOOLS_TABLE}"
+fi
 FALLBACK_DIR="${HERE}/mmseqs"
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -85,11 +92,12 @@ install_conda() {
         return 1
     fi
     local prefix
-    prefix=$(conda run -n "${ENV_NAME}" python -c \
-        "import sys; print(sys.prefix)" 2>/dev/null | tail -1) || true
-    if [[ -z "${prefix}" ]]; then
-        prefix=$(conda env list | awk -v e="${ENV_NAME}" '$1==e {print $NF}')
+    prefix=$(conda run -n "${ENV_NAME}" printenv CONDA_PREFIX 2>/dev/null \
+             | tr -d '\r' | tail -1) || true
+    if [[ -z "${prefix}" || ! -d "${prefix}" ]]; then
+        prefix=$(conda env list | awk -v e="${ENV_NAME}" '$1==e {print $NF}' | tail -1) || true
     fi
+    [[ -n "${prefix}" && -d "${prefix}" ]] || return 1
     BIN="${prefix}/bin/mmseqs"
     [[ -x "${BIN}" ]]
 }

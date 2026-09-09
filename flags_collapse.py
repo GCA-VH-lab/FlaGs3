@@ -50,19 +50,11 @@ class Collapser:
 						 "threads": self.threads or 1})
 		if not cmd:
 			return False, "no mmseqs row in tools_table.tsv"
-		program = cmd[0]
-		if os.path.isabs(program):
-			if os.path.isfile(program) and os.access(program, os.X_OK):
-				return True, program
-			return False, "{} is not an executable file".format(program)
 		if wd:
-			candidate = os.path.join(wd, program)
+			candidate = os.path.join(wd, str(cmd[0]))
 			if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
 				return True, candidate
-		found = shutil.which(program)
-		if found:
-			return True, found
-		return False, "{} not found on PATH".format(program)
+		return flags_tools.locate(cmd)
 
 	def collapse(self, sequences: Dict[str, str]) -> CollapseResult:
 		if not sequences:
@@ -83,7 +75,8 @@ class Collapser:
 						 "threads": self.threads or 1})
 		self.command = " ".join(cmd)
 		try:
-			proc = subprocess.run(cmd, cwd=wd or None, capture_output=True, text=True)
+			proc = subprocess.run(cmd, cwd=wd or None, capture_output=True, text=True,
+								  env=flags_tools.env_for(cmd))
 		except FileNotFoundError:
 			raise FileNotFoundError(
 				"{} not found; run mmseqs_installer.sh or drop --cluster_collapse."
@@ -92,8 +85,7 @@ class Collapser:
 			self._record(cmd, locals().get("proc"))
 		if proc.returncode != 0:
 			raise RuntimeError("mmseqs exited {}: {}".format(
-				proc.returncode,
-				(proc.stderr or proc.stdout or "(no output)").strip()[-500:]))
+				proc.returncode, flags_tools.brief(proc.stderr or proc.stdout)))
 
 		members = self._read_clusters(prefix + "_cluster.tsv", sequences)
 		representatives = {rep: sequences[rep] for rep in members}

@@ -238,7 +238,7 @@ class BlastSearcher:
 				cmd += ["-num_threads", str(self.threads)]
 			_debug("blast: running {}".format(" ".join(cmd)))
 			result = subprocess.run(cmd, cwd=wd or None, capture_output=True,
-									text=True)
+									text=True, env=flags_tools.env_for(cmd))
 			_debug("blast: exit {}".format(result.returncode))
 			try:
 				import flags_log

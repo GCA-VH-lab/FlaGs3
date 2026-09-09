@@ -21,7 +21,8 @@ NUMERIC = {"font_size": int, "row_height": int, "gene_height": int,
 
 MODES = ("versatile", "triangles", "classic")
 
-FEATURES = ("cluster_rna", "domains", "tmhmm", "signalp", "sismis",
+FEATURES = ("cluster_rna", "domains", "tmhmm", "signalp", "sismis", "genomad",
+			"defence",
 			"monochrome", "none")
 
 FALSEY = ("false", "no", "off", "0", "")
@@ -184,6 +185,8 @@ class Hit(NamedTuple):
 	end: int
 	type: str
 	probability: float = 0.0
+	source: str = ""      # which table it came from: sismis, genomad, defence
+	tool: str = ""        # which program called it, when more than one can
 
 
 class RunData(NamedTuple):
@@ -198,6 +201,8 @@ class RunData(NamedTuple):
 	clans: Dict[str, str]
 	features: Dict[str, list]
 	secretion: List[Hit]
+	genomad: List[Hit] = ()
+	defence: List[Hit] = ()
 
 
 def _rows(path: str):
@@ -285,17 +290,25 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 					(row.get("kind", ""), int(row.get("start") or 0),
 					 int(row.get("end") or 0)))
 
-	secretion = []
-	sec_path = path("_secretion.tsv")
-	if os.path.isfile(sec_path):
-		for row in _rows(sec_path):
+	def _bands(name, source):
+		out = []
+		p = path(name)
+		if not os.path.isfile(p):
+			return out
+		for row in _rows(p):
 			if not row.get("contig") or not (row.get("start") or "").isdigit():
 				continue      # older files without the normalised columns
-			secretion.append(Hit(
+			out.append(Hit(
 				assembly=row.get("assembly", ""), contig=row["contig"],
 				start=int(row["start"]), end=int(row.get("end") or 0),
 				type=row.get("type", "") or "?",
-				probability=float(row.get("probability") or 0.0)))
+				probability=float(row.get("probability") or 0.0),
+				source=source, tool=row.get("called_by", "") or ""))
+		return out
+
+	secretion = _bands("_secretion.tsv", "sismis")
+	genomad = _bands("_genomad.tsv", "genomad")
+	defence = _bands("_defence.tsv", "defence")
 
 	newick, order = "", None
 	tree_path = os.path.join(directory, "tree", prefix + "_tree.nwk")
@@ -314,7 +327,8 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 	return RunData(genes=genes, families=families, species=species, labels=labels,
 				   numbers=numbers,
 				   order=order or seen_rows, newick=newick, domains=domains,
-				   clans=clans, features=features, secretion=secretion)
+				   clans=clans, features=features, secretion=secretion,
+				   genomad=genomad, defence=defence)
 
 
 def render_figure(spec: FigureSpec, data: RunData) -> str:
@@ -326,7 +340,12 @@ def render_figure(spec: FigureSpec, data: RunData) -> str:
 	pick = lambda key, default: g.get(key, default)
 
 	domains = data.domains if spec.wants("domains") else None
-	secretion = data.secretion if spec.wants("sismis") else None
+	secretion = list(data.secretion) if spec.wants("sismis") else []
+	if spec.wants("genomad"):
+		secretion = secretion + list(data.genomad)
+	if spec.wants("defence"):
+		secretion = secretion + list(data.defence)
+	secretion = secretion or None
 	features = {}
 	if spec.wants("tmhmm") or spec.wants("signalp"):
 		want = {k for k in ("tmhmm", "signalp") if spec.wants(k)}

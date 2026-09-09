@@ -27,10 +27,109 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     return 1
 fi
 
+COMPONENTS="pfam defence-hmm mmseqs genomad defensefinder padloc signalp deeptmhmm"
+SELECTED=""
+ASSUME=""
+SIGNALP_PKG=""
+DEEPTMHMM_PKG=""
+
+usage() {
+    cat <<USAGE
+Usage: bash build.sh [options]
+
+Builds the FlaGs3 conda environment, then offers each optional tool in turn.
+With no options every optional tool is offered interactively.
+
+  --all                 install every optional tool without asking
+  --none                install none of them, environment only
+  --with LIST           install exactly these, comma separated, no prompts
+  --signalp PATH        SignalP 6 package tarball, for --with signalp
+  --deeptmhmm PATH      DeepTMHMM package tarball, for --with deeptmhmm
+  -h, --help            this text
+
+Components for --with:
+  pfam            Pfam-A profiles, for --domains          (~1.5 GB)
+  defence-hmm     DefenseFinder HMM profiles, for --domains --hmmdb defence=
+  mmseqs          MMseqs2, for --cluster_collapse
+  genomad         geNomad and its database, for --genomad (~1.6 GB)
+  defensefinder   DefenseFinder itself, for --defensefinder
+  padloc          PadLoc, for --padloc
+  signalp         SignalP 6 locally, needs --signalp PATH  (licensed)
+  deeptmhmm       DeepTMHMM locally, needs --deeptmhmm PATH (licensed)
+
+Examples:
+  bash build.sh --all
+  bash build.sh --with mmseqs,genomad,defensefinder,padloc
+  bash build.sh --none
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --all)  ASSUME="all"; shift ;;
+        --none) ASSUME="none"; shift ;;
+        --with) SELECTED="${2:-}"; shift 2 ;;
+        --signalp)   SIGNALP_PKG="${2:-}"; shift 2 ;;
+        --deeptmhmm) DEEPTMHMM_PKG="${2:-}"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) error "Unknown option: $1"; usage; exit 1 ;;
+    esac
+done
+
+if [[ -n "${SELECTED}" ]]; then
+    for item in ${SELECTED//,/ }; do
+        if [[ " ${COMPONENTS} " != *" ${item} "* ]]; then
+            error "Unknown component: ${item}"
+            error "Known: ${COMPONENTS}"
+            exit 1
+        fi
+    done
+fi
+
+# Decide whether a component is wanted: --all/--none win, then an explicit
+# --with list, otherwise fall back to asking.
+want() {
+    local name="$1"; shift
+    case "${ASSUME}" in
+        all)  info "Selected by --all: ${name}"; return 0 ;;
+        none) return 1 ;;
+    esac
+    if [[ -n "${SELECTED}" ]]; then
+        [[ ",${SELECTED}," == *",${name},"* ]] || return 1
+        info "Selected by --with: ${name}"
+        return 0
+    fi
+    ask "$@"
+}
+
+# Run one installer inside the FlaGs3 environment and report clearly.
+run_script() {
+    local label="$1" script="$2"; shift 2
+    if [[ ! -f "${script}" ]]; then
+        error "${label}: ${script} not found next to build.sh"
+        return 1
+    fi
+    info "Running $(basename "${script}") ..."
+    if conda run --no-capture-output --name "${ENV_NAME}" bash "${script}" "$@"; then
+        info "${label}: done"
+        return 0
+    fi
+    warn "${label}: the installer failed. Run it by hand to see why:"
+    warn "  conda run --name ${ENV_NAME} bash $(basename "${script}") $*"
+    return 1
+}
+
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${THIS_DIR}/environment.yml"
 PFAM_SCRIPT="${THIS_DIR}/pfamA_loader.sh"
-DF_SCRIPT="${THIS_DIR}/defenceFinder_loader.sh"
+DF_SCRIPT="${THIS_DIR}/defensefinder_hmm_loader.sh"
+MMSEQS_SCRIPT="${THIS_DIR}/mmseqs_installer.sh"
+GENOMAD_SCRIPT="${THIS_DIR}/genomad_installer.sh"
+GENOMAD_DB_SCRIPT="${THIS_DIR}/genomad_loader.sh"
+DEFENSEFINDER_SCRIPT="${THIS_DIR}/defensefinder_installer.sh"
+PADLOC_SCRIPT="${THIS_DIR}/padloc_installer.sh"
+SIGNALP_SCRIPT="${THIS_DIR}/signalp_installer.sh"
+DEEPTMHMM_SCRIPT="${THIS_DIR}/deeptmhmm_installer.sh"
 ENV_NAME="FlaGs3"
 
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -136,66 +235,103 @@ else
     info "  conda run --name ${ENV_NAME} pip install sismis"
 fi
 
-PFAM_HMM="${THIS_DIR}/pfam_db/Pfam-A.hmm"
+# --- optional tools -----------------------------------------------------
+# Each is offered in turn. want() honours --all / --none / --with and falls
+# back to asking, so every component behaves the same way.
 
+PFAM_HMM="${THIS_DIR}/pfam_db/Pfam-A.hmm"
 if [[ -f "${PFAM_HMM}" && -f "${PFAM_HMM}.h3m" ]]; then
-    info "Found an indexed Pfam-A database — --domains available."
-    info "  --domains --hmmdb pfam_db/Pfam-A.hmm"
-elif ask "Install the Pfam-A database now? It is only needed for domain" \
-         "annotation (the --domains option). Download is large (~1.5 GB)."; then
-    if [[ ! -f "${PFAM_SCRIPT}" ]]; then
-        error "pfamA_loader.sh not found at: ${PFAM_SCRIPT}"
-        error "Place pfamA_loader.sh next to build.sh and retry."
-        exit 1
-    fi
-    if [[ ! -x "${PFAM_SCRIPT}" ]]; then
-        info "Making pfamA_loader.sh executable..."
-        chmod +x "${PFAM_SCRIPT}"
-    fi
-    info "Running pfamA_loader.sh..."
-    if ! conda run --no-capture-output --name "${ENV_NAME}" bash "${PFAM_SCRIPT}"; then
-        error "pfamA_loader.sh encountered an error. Check the output above."
-        error "You can re-run it manually at any time:"
-        error "  conda run --name ${ENV_NAME} bash pfamA_loader.sh"
-        exit 1
-    fi
-    info "Pfam-A database installed successfully."
+    info "Pfam-A already installed --domains is available."
+elif want pfam "Install the Pfam-A database? Needed for --domains. ~1.5 GB."; then
+    run_script "Pfam-A" "${PFAM_SCRIPT}" || true
 else
-    info "Skipping Pfam-A installation."
-    info "You can install it later by running:"
-    info "  conda run --name ${ENV_NAME} bash pfamA_loader.sh"
+    info "Skipping Pfam-A.  Later:  bash pfamA_loader.sh"
 fi
 
 DF_PROFILES="${THIS_DIR}/defence_db"
-
 if [[ -d "${DF_PROFILES}" ]] && compgen -G "${DF_PROFILES}/*.hmm" > /dev/null; then
-    info "Found the DefenseFinder profiles — anti-phage annotation available."
-    info "  --domains --hmmdb defence=defence_db --hmm_coverage defence=0.3,0.3"
-elif ask "Install the DefenseFinder HMM profiles now? They let --domains annotate" \
-         "anti-phage defence systems alongside Pfam. Download is ~50 MB (255 MB unpacked)."; then
-    if [[ ! -f "${DF_SCRIPT}" ]]; then
-        error "defenceFinder_loader.sh not found at: ${DF_SCRIPT}"
-        error "Place defenceFinder_loader.sh next to build.sh and retry."
-        exit 1
-    fi
-    if [[ ! -x "${DF_SCRIPT}" ]]; then
-        info "Making defenceFinder_loader.sh executable..."
-        chmod +x "${DF_SCRIPT}"
-    fi
-    info "Running defenceFinder_loader.sh..."
-    if ! conda run --no-capture-output --name "${ENV_NAME}" bash "${DF_SCRIPT}"; then
-        error "defenceFinder_loader.sh encountered an error. Check the output above."
-        error "You can re-run it manually at any time:"
-        error "  conda run --name ${ENV_NAME} bash defenceFinder_loader.sh"
-        exit 1
-    fi
-    info "DefenseFinder profiles installed successfully."
+    info "DefenseFinder HMM profiles already installed."
+elif want defence-hmm "Install the DefenseFinder HMM profiles? They let --domains" \
+                      "annotate defence systems alongside Pfam. ~50 MB." ; then
+    run_script "DefenseFinder profiles" "${DF_SCRIPT}" || true
 else
-    info "Skipping the DefenseFinder profiles."
-    info "You can install them later by running:"
-    info "  conda run --name ${ENV_NAME} bash defenceFinder_loader.sh"
+    info "Skipping the profiles.  Later:  bash defensefinder_hmm_loader.sh"
 fi
 
+if conda run --name "${ENV_NAME}" command -v mmseqs &>/dev/null \
+   || [[ -x "${THIS_DIR}/mmseqs/bin/mmseqs" ]]; then
+    info "MMseqs2 already installed --cluster_collapse is available."
+elif want mmseqs "Install MMseqs2? Needed for --cluster_collapse, which makes" \
+                 "clustering affordable on very large inputs. ~20 MB."; then
+    run_script "MMseqs2" "${MMSEQS_SCRIPT}" || true
+else
+    info "Skipping MMseqs2.  Later:  bash mmseqs_installer.sh"
+fi
+
+if want genomad "Install geNomad and its database? Needed for --genomad," \
+                "which finds proviruses and plasmids. Database is ~1.6 GB."; then
+    if run_script "geNomad" "${GENOMAD_SCRIPT}"; then
+        run_script "geNomad database" "${GENOMAD_DB_SCRIPT}" || true
+    fi
+else
+    info "Skipping geNomad.  Later:  bash genomad_installer.sh && bash genomad_loader.sh"
+fi
+
+if want defensefinder "Install DefenseFinder? Needed for --defensefinder," \
+                      "which calls whole defence systems rather than single domains."; then
+    run_script "DefenseFinder" "${DEFENSEFINDER_SCRIPT}" || true
+else
+    info "Skipping DefenseFinder.  Later:  bash defensefinder_installer.sh"
+fi
+
+if want padloc "Install PadLoc? Needed for --padloc, a second defence system" \
+               "caller that can run alongside DefenseFinder."; then
+    run_script "PadLoc" "${PADLOC_SCRIPT}" || true
+else
+    info "Skipping PadLoc.  Later:  bash padloc_installer.sh"
+fi
+
+# SignalP and DeepTMHMM are licensed, so they need a package the user already
+# has. Non-interactive runs never stop to ask for a path: with --all or --with
+# and no package given, they are skipped with a note.
+licensed() {
+    local name="$1" script="$2" package="$3" prompt="$4" hint="$5"
+    if [[ -n "${package}" ]]; then
+        run_script "${name}" "${script}" "${package}" || true
+        return
+    fi
+    if [[ -n "${ASSUME}" || -n "${SELECTED}" ]]; then
+        if want "$(basename "${script}" _installer.sh)" "${prompt}"; then
+            warn "${name}: needs a package path, so it cannot be installed"
+            warn "  non-interactively. Later:  bash $(basename "${script}") ${hint}"
+        fi
+        return
+    fi
+    if want "$(basename "${script}" _installer.sh)" "${prompt}"; then
+        printf "    Path to the %s package (blank to skip): " "${name}"
+        read -r reply
+        if [[ -n "${reply}" ]]; then
+            run_script "${name}" "${script}" "${reply}" || true
+        else
+            info "Skipping ${name}.  Later:  bash $(basename "${script}") ${hint}"
+        fi
+    else
+        info "Skipping ${name}.  Later:  bash $(basename "${script}") ${hint}"
+    fi
+}
+
+licensed "SignalP 6" "${SIGNALP_SCRIPT}" "${SIGNALP_PKG}" \
+    "Install SignalP 6 locally? It is licensed, so you need the package tarball from DTU. Without it --signalp runs in the cloud." \
+    "PACKAGE.tar.gz"
+
+licensed "DeepTMHMM" "${DEEPTMHMM_SCRIPT}" "${DEEPTMHMM_PKG}" \
+    "Install DeepTMHMM locally? It is licensed, so you need the package. Without it --tmhmm runs in the cloud." \
+    "PACKAGE"
+
+if [[ -f "${THIS_DIR}/tools_table.local.tsv" ]]; then
+    info "Installed tool paths were written to tools_table.local.tsv."
+    info "  That file is git-ignored; tools_table.tsv keeps the shipped defaults."
+fi
 
 printf "\n"
 info "Installation complete."

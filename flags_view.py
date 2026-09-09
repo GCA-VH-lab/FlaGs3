@@ -314,14 +314,27 @@ class OperonView(_FlaGsBase):
 				gxs.append(self._x_for(g.start, center, q_mid, reversed_row))
 				gxs.append(self._x_for(g.end, center, q_mid, reversed_row))
 			row_lo, row_hi = (min(gxs), max(gxs)) if gxs else (0, 0)
-			for h in self._sec["row_hits"].get(q, []):
+			here = self._sec["row_hits"].get(q, [])
+			placed, lanes = self._band_lanes(here)
+			codes = self._sec.get("code", {})
+			for i, h in enumerate(here):
 				band, mid = self._secretion_band(
 					h, self._sec["color"][h.type], center, q_mid, reversed_row,
-					y, row_lo, row_hi)
-				if band:
-					svg.append(band)
-					self._sec_labels.setdefault(q, []).append(
-						(h.type, self._sec["color"][h.type]))
+					y, row_lo, row_hi, placed.get(i, 0), lanes)
+				if not band:
+					continue
+				svg.append(band)
+				code = codes.get(h.type)
+				if code:
+					size = max(6, int(self.font * self.SECRETION_LABEL_SCALE))
+					cx, cy, width = mid
+					if width >= self._text_width(code, size) + 4:
+						svg.append(
+							'<text x="{:.1f}" y="{:.1f}" font-size="{}" '
+							'text-anchor="middle" fill="#000000">{}</text>'.format(
+								cx, cy + size / 3, size, code))
+				self._sec_labels.setdefault(q, []).append(
+					(codes.get(h.type, h.type), self._sec["color"][h.type]))
 
 		for g in by_query[q]:
 			if reversed_row:
@@ -415,18 +428,22 @@ class OperonView(_FlaGsBase):
 		sec_w = 0
 		if secretion:
 			label_size = max(7, int(self.font * self.SECRETION_LABEL_SCALE))
-			widest = max((self._text_width(h.type, label_size)
+			codes = self._sec.get("code", {}) if self._sec else {}
+			widest = max((self._text_width(codes.get(h.type, h.type), label_size)
 						  for h in secretion), default=0)
 			sec_w = int(widest) + 14
 		W = int(genes_right + sec_w + self.pad)
 
 		drawn = self._drawn_elements(by_query, features)
 		panels = []
-		for title, ov in (("Domains", self._dom), ("Secretion systems", self._sec)):
-			if ov:
-				items, cols, col_w, h = self._legend_layout(ov, W)
-				if items:
-					panels.append((title, items, cols, col_w, h))
+		if self._dom:
+			items, cols, col_w, h = self._legend_layout(self._dom, W)
+			if items:
+				panels.append(("Domains", items, cols, col_w, h))
+		for tool, items in (self._sec.get("panels") or []) if self._sec else []:
+			shaped, cols, col_w, h = self._legend_layout({"legend": items}, W)
+			if shaped:
+				panels.append((self._band_title(tool), shaped, cols, col_w, h))
 		legend_h = sum(p[4] for p in panels)
 		extra_blocks = self._extra_legend(drawn)
 		extra_h = sum(36 + 16 * (len(items) // 4) for _, items in extra_blocks)
@@ -497,6 +514,23 @@ class OperonView(_FlaGsBase):
 				 for grp in group_index), key=lambda t: t[0]),
 		}
 
+	BAND_CODES = {"defence": "D"}   # sources whose bands are numbered, not named
+
+	@staticmethod
+	def _band_lanes(hits):
+		lanes = []           # last end drawn in each lane
+		placed = {}
+		for i, h in sorted(enumerate(hits), key=lambda kv: (kv[1].start, kv[1].end)):
+			for lane, end in enumerate(lanes):
+				if h.start > end:
+					lanes[lane] = h.end
+					placed[i] = lane
+					break
+			else:
+				placed[i] = len(lanes)
+				lanes.append(h.end)
+		return placed, max(len(lanes), 1)
+
 	def _secretion_overlay(self, rows, by_query, hits):
 		by_loc: Dict[tuple, list] = {}
 		for h in hits:
@@ -505,6 +539,8 @@ class OperonView(_FlaGsBase):
 		gene_hits: Dict[tuple, list] = {}   
 		row_hits: Dict[str, list] = {}      
 		seen_types = []
+		source_of: Dict[str, str] = {}
+		tools_of: Dict[str, set] = {}
 		for q in rows:
 			assembly = q.rsplit("|", 1)[-1]
 			for g in by_query[q]:
@@ -517,14 +553,40 @@ class OperonView(_FlaGsBase):
 							row_hits[q].append(h)
 						if h.type not in seen_types:
 							seen_types.append(h.type)
+						source_of.setdefault(h.type, getattr(h, "source", ""))
+						for t in self._tools_of(h):
+							tools_of.setdefault(h.type, set()).add(t)
 		seen_types.sort()
 		color = {t: self._contrast_color(i) for i, t in enumerate(seen_types)}
+
+		code = {}
+		counters: Dict[str, int] = {}
+		for t in seen_types:
+			prefix = self.BAND_CODES.get(source_of.get(t, ""))
+			if prefix:
+				counters[prefix] = counters.get(prefix, 0) + 1
+				code[t] = "{}{}".format(prefix, counters[prefix])
 		return {
 			"gene_hits": gene_hits,
 			"row_hits": row_hits,
 			"color": color,
-			"legend": [(i + 1, t, color[t]) for i, t in enumerate(seen_types)],
+			"code": code,
+			"panels": self._band_panels(seen_types, color, code, tools_of),
 		}
+
+	@staticmethod
+	def _tools_of(hit):
+		raw = (getattr(hit, "tool", "") or "").strip()
+		return [t for t in raw.replace(";", ",").split(",") if t.strip()] or [""]
+
+	@staticmethod
+	def _band_panels(seen_types, color, code, tools_of):
+		grouped: Dict[str, list] = {}
+		for i, t in enumerate(seen_types):
+			num = code.get(t, i + 1)
+			for tool in sorted(tools_of.get(t) or {""}):
+				grouped.setdefault(tool, []).append((num, t, color[t]))
+		return [(tool, grouped[tool]) for tool in sorted(grouped)]
 
 	def _x_for(self, coord, center, q_mid, reversed_row):
 		if reversed_row:
@@ -532,7 +594,7 @@ class OperonView(_FlaGsBase):
 		return center + (coord - q_mid) / self.bp_per_px
 
 	def _secretion_band(self, hit, color, center, q_mid, reversed_row, y,
-						row_lo, row_hi):
+						row_lo, row_hi, lane=0, lanes=1):
 		xa = self._x_for(hit.start, center, q_mid, reversed_row)
 		xb = self._x_for(hit.end, center, q_mid, reversed_row)
 		x0, x1 = (xa, xb) if xa <= xb else (xb, xa)
@@ -540,13 +602,15 @@ class OperonView(_FlaGsBase):
 		x1 = min(x1, row_hi)
 		if x1 <= x0:
 			return "", None
-		h = self.gene_h + self.SECRETION_BAND_PAD * 2
+		full = self.gene_h + self.SECRETION_BAND_PAD * 2
+		h = full / max(lanes, 1)
+		top = y - full / 2 + lane * h
 		rect = ('<rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}" '
 				'fill="{}" fill-opacity="{}" stroke="{}" stroke-opacity="{}" '
 				'stroke-width="1" rx="2"/>').format(
-					x0, y - h / 2, x1 - x0, h, color, self.SECRETION_BAND_OPACITY,
+					x0, top, x1 - x0, h, color, self.SECRETION_BAND_OPACITY,
 					color, min(1.0, self.SECRETION_BAND_OPACITY * 2))
-		return rect, (x0 + x1) / 2
+		return rect, ((x0 + x1) / 2, top + h / 2, x1 - x0)
 
 	def _arrow_points(self, x0, x1, cy, strand):
 		h = self.gene_h
@@ -725,6 +789,17 @@ class OperonView(_FlaGsBase):
 		width = 1 if shape == "swatch" else 2
 		return ('<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" '
 				'stroke-width="{}"/>'.format(x, y, color, stroke, width))
+
+	TOOL_TITLES = {"defensefinder": "Defence systems (DefenseFinder)",
+				   "padloc": "Defence systems (PadLoc)",
+				   "": "Secretion systems and mobile elements"}
+
+	def _band_title(self, tool):
+		if tool in self.TOOL_TITLES:
+			return self.TOOL_TITLES[tool]
+		named = " and ".join(self.TOOL_TITLES.get(t, t).split("(")[-1].rstrip(")")
+							 for t in tool.split(","))
+		return "Defence systems ({})".format(named)
 
 	def _legend_layout(self, overlay, W):
 		items = overlay.get("legend")

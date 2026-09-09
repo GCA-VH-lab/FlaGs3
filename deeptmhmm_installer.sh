@@ -6,7 +6,13 @@ ENV_NAME="flags3-deeptmhmm"
 PY_VERSION="3.8"
 PACKAGE="$1"
 INSTALL_DIR="${2:-$(pwd)/deeptmhmm}"
-TOOLS_TABLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools_table.tsv"
+TOOLS_TABLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools_table.local.tsv"
+
+# Installers write here, never to the committed tools_table.tsv, so machine
+# paths stay out of the repository.
+if [[ ! -f "${TOOLS_TABLE}" ]]; then
+    printf '#name\tcommand\tdirectory\tscan_range\n' > "${TOOLS_TABLE}"
+fi
 
 if [[ -z "${PACKAGE}" ]]; then
     cat <<'USAGE'
@@ -199,7 +205,7 @@ open(path, "w").writelines(rows)
 print("  updated the deeptmhmm row of {}".format(path))
 PY
 else
-    echo "  add this row to tools_table.tsv:"
+    echo "  add this row to tools_table.local.tsv:"
     printf '    deeptmhmm\t%s\t%s\n' "${CMD}" "${INSTALL_DIR}"
 fi
 

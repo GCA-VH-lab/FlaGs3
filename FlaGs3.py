@@ -592,6 +592,8 @@ class NeighborhoodExtractor:
 		self.species: Dict[str, str] = {}          # row id -> organism name
 		self.row_label: Dict[str, str] = {}        # row id -> display label
 		self.ranges: Dict[str, RangeInfo] = {}     # row id -> window actually obtained
+		self.window_genes: Dict[str, list] = {}    # row id -> every gene in the scan window
+		self.window_sequences: Dict[str, str] = {} # those genes' proteins, by accession
 		self._gff_cache: Dict[str, List[dict]] = {}
 		self._faa_cache: Dict[str, Dict[str, Tuple[str, str]]] = {}
 		self._rna_cache: Dict[str, Dict[str, str]] = {}
@@ -661,16 +663,54 @@ class NeighborhoodExtractor:
 		if neighborhood:
 			self.ranges[row_id] = self._range_info(
 				row_id, query, assembly, genes, idx, contig, qstrand, neighborhood)
+			if self.scan_range:
+				self._collect_window(row_id, assembly, genes, idx, contig,
+									 qstrand, faa)
 		return neighborhood
 
+	def _collect_window(self, row_id, assembly, genes, idx, contig, qstrand, faa):
+		lo, hi = self._window(assembly, genes, idx, contig, self.scan_range)
+		found = []
+		for j in range(lo, hi):
+			g = genes[j]
+			if g["contig"] != contig or g["is_rna"]:
+				continue
+			acc = g["accession"]
+			seq = faa.get(acc, (None, None))[0]
+			if not seq:
+				continue
+			self.window_sequences.setdefault(acc, seq)
+			found.append(FlankingGene(
+				accession=acc,
+				strand=self._norm_strand(qstrand, g["strand"]),
+				start=g["start"], end=g["end"], product=g["product"],
+				offset=(idx - j) if qstrand == "-" else (j - idx),
+				query=row_id, is_rna=False, contig=contig))
+		self.window_genes[row_id] = found
+
+	def forget(self, assembly: str):
+		"""Drop an assembly's parsed GFF and proteins once nothing else needs
+		them. Contig lengths stay: they are small and the scanning tools and the
+		range report both read them after extraction is over."""
+		self._gff_cache.pop(assembly, None)
+		self._faa_cache.pop(assembly, None)
+		self._rna_cache.pop(assembly, None)
+		self._reach.pop(assembly, None)
+		if self._genome_cache[0] == assembly:
+			self._genome_cache = (None, {})
+
+	def contig_lengths(self, assembly: str) -> Dict[str, int]:
+		return self._contig_len.get(assembly, {})
+
 	def _window(self, assembly: str, genes: List[dict], idx: int,
-				contig: str) -> Tuple[int, int]:
+				contig: str, span: Optional[int] = None) -> Tuple[int, int]:
 		c_lo, c_hi = self._contig_span.get(assembly, {}).get(
 			contig, (0, len(genes)))
-		if not self.range_bp:
+		reach_bp = span if span is not None else self.range_bp
+		if not reach_bp:
 			return max(c_lo, idx - self.flank), min(c_hi, idx + self.flank + 1)
-		lo_bp = genes[idx]["start"] - self.range_bp
-		hi_bp = genes[idx]["end"] + self.range_bp
+		lo_bp = genes[idx]["start"] - reach_bp
+		hi_bp = genes[idx]["end"] + reach_bp
 		reach = self._reach.get(assembly) or []
 		lo = idx
 		while lo > c_lo and (reach[lo - 1] if reach else genes[lo - 1]["end"]) >= lo_bp:
@@ -697,17 +737,15 @@ class NeighborhoodExtractor:
 			left_avail, right_avail = right_avail, left_avail
 			left_reach, right_reach = right_reach, left_reach
 		span = self.scan_range
-		if span is None:
-			scan_start, scan_end = lo_bp, hi_bp
-		else:
-			scan_start, scan_end = q["start"] - span, q["end"] + span
+		scan_start = max(1, q["start"] - span) if span else 0
+		scan_end = min(length, q["end"] + span) if span else 0
 		return RangeInfo(
 			row=row_id, query=query, assembly=assembly, contig=contig,
 			contig_length=length, q_start=q["start"], q_end=q["end"],
 			q_strand=qstrand, up_available=left_avail, down_available=right_avail,
 			up_reached=left_reach, down_reached=right_reach,
 			genes_up=before, genes_down=after,
-			scan_start=max(1, scan_start), scan_end=min(length, scan_end))
+			scan_start=scan_start, scan_end=scan_end)
 
 	@staticmethod
 	def _open(path: str):
@@ -734,7 +772,7 @@ class NeighborhoodExtractor:
 				col = raw.rstrip("\n").split("\t")
 				if len(col) < 9:
 					continue
-				feature, attrs = col[2], col[8]
+				feature, attrs = col[2], self._attrs(col[8])
 				if feature == "region":
 					if col[0] not in lengths:
 						try:
@@ -860,12 +898,22 @@ class NeighborhoodExtractor:
 		return sub or None
 
 	@staticmethod
-	def _attr(attributes: str, key: str) -> Optional[str]:
-		m = re.search(r"(?:^|;){}=([^;]*)".format(re.escape(key)), attributes)
-		return m.group(1) if m else None
+	def _attr(attributes, key: str) -> Optional[str]:
+		if isinstance(attributes, dict):
+			return attributes.get(key)
+		return NeighborhoodExtractor._attrs(attributes).get(key)
+
+	@staticmethod
+	def _attrs(attributes: str) -> Dict[str, str]:
+		out: Dict[str, str] = {}
+		for field in attributes.split(";"):
+			key, sep, value = field.partition("=")
+			if sep and key not in out:
+				out[key] = value       # first wins, as the old regex did
+		return out
 
 	@classmethod
-	def _cds_accession(cls, attrs: str, locus_tag: str) -> Optional[str]:
+	def _cds_accession(cls, attrs, locus_tag: str) -> Optional[str]:
 		return (cls._attr(attrs, "protein_id")
 				or cls._strip_id_prefix(cls._attr(attrs, "ID"))
 				or locus_tag
@@ -915,7 +963,7 @@ class NeighborhoodClusterer:
 			return name, {self._name(h) for h in result.hits if h.included}
 
 		with ThreadPoolExecutor(max_workers=self.workers) as pool:
-			adjacency = dict(pool.map(search_one, digital.items()))
+			adjacency = dict(pool.map(search_one, sorted(digital.items())))
 
 		self.adjacency = adjacency
 		return self._connected_components(adjacency)
@@ -946,7 +994,7 @@ class NeighborhoodClusterer:
 				seen.add(x)
 				stack.extend(symmetric.get(x, set()) - component)
 			families.append(sorted(component))
-		families.sort(key=len, reverse=True)
+		families.sort(key=lambda f: (-len(f), f[0]))
 		return families
 
 
@@ -1085,13 +1133,11 @@ class ReportWriter:
 			product = self.products.get(acc, "")
 			return "{}|{}".format(acc, product) if product else acc
 
-		self._write_fasta(out_path("_tree.fasta"),
-						  ((row, self.row_sequences[row]) for row in self.row_sequences))
-		self._write_fasta(out_path("_flankgene.fasta"),
-						  ((label(a), self.sequences[a]) for a in flanking))
-		self._write_fasta(out_path("_all.fasta"),
-						  [(row, self.row_sequences[row]) for row in self.row_sequences]
-						  + [(label(a), self.sequences[a]) for a in flanking])
+		rows_out = [(row, self.row_sequences[row]) for row in sorted(self.row_sequences)]
+		flank_out = [(label(a), self.sequences[a]) for a in sorted(flanking)]
+		self._write_fasta(out_path("_tree.fasta"), rows_out)
+		self._write_fasta(out_path("_flankgene.fasta"), flank_out)
+		self._write_fasta(out_path("_all.fasta"), rows_out + flank_out)
 
 	def range_report(self, path):
 		want = self.requested
@@ -1120,8 +1166,9 @@ class ReportWriter:
 					",".join(sides) if sides else "-",
 					info.genes_up, info.genes_down,
 					info.genes_up + info.genes_down + 1,
-					info.scan_start, info.scan_end,
-					info.scan_end - info.scan_start + 1)) + "\n")
+					info.scan_start or "-", info.scan_end or "-",
+					(info.scan_end - info.scan_start + 1) if info.scan_start else "-",
+					)) + "\n")
 
 	@staticmethod
 	def _write_fasta(path, records):
@@ -1204,7 +1251,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "1.4.0"
+VERSION = "2.0.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1373,7 +1420,8 @@ def build_parser():
 	parser.add_argument("-api", "--api_key", help=" NCBI API Key. ")
 	parser.add_argument("-g", "--gene", type=int, default=4, help=" Number of flanking genes up/downstream. Default = 4 ")
 	parser.add_argument("-r", "--range", type=int, metavar="BP", help=" Take the neighbourhood as every gene within this many bases of the query gene, instead of a fixed number of genes. Measured outwards from the query gene's own start and end, and a gene straddling the edge is included. Overrides -g. Contigs shorter than the window are reported in <dir>_rangeReport.tsv rather than silently truncated. ")
-	parser.add_argument("-sr", "--scan_range", type=int, metavar="BP", help=" Genomic span around the query gene handed to the scanning tools (Sismis, and later geNomad, DefenseFinder, PadLoc), independent of how many genes are clustered and drawn. Use it to give those tools wide context while keeping the neighbourhood itself small: -g 5 -sr 50000 clusters 11 genes and scans 100 kb. Default: the span of the extracted neighbourhood. ")
+	parser.add_argument("-sm", "--scan_margin", type=int, default=10000, metavar="BP", help=" Extra sequence handed to the scanning tools beyond the analysis range, so a system straddling the edge is still called whole rather than cut in half. Hits reaching into the margin are kept and marked 'partial' in the coverage column. Set 0 to scan exactly the analysis range. Default = 10000 ")
+	parser.add_argument("-sr", "--scan_range", type=int, metavar="BP", help=" Genomic span around the query gene given to the tools that scan sequence rather than genes (Sismis, geNomad). Without it they get the whole genome, as before. Independent of -g/-r, so -g 5 -sr 50000 clusters 11 genes and scans 100 kb. A tool can override it in the scan_range column of tools_table.tsv. ")
 	parser.add_argument("-m", "--max_assemblies", type=int, default=1, help=" Max assemblies per protein. Default = 1 ")
 	parser.add_argument("-nc", "--no_cross_db", action="store_true", help=" Keep protein and genome in the same database: RefSeq proteins (WP_, NP_, ...) resolve only to GCF_ assemblies and INSDC proteins only to GCA_. Proteins whose only assemblies are in the other database are then reported as unresolved. Does not affect assemblies given explicitly in the input file. ")
 	parser.add_argument("-e", "--ethreshold", type=float, default=1e-3, help=" Jackhmmer inclusion E-value threshold for clustering flanking genes. Default = 1e-3 ")
@@ -1402,6 +1450,10 @@ def build_parser():
 	parser.add_argument("--tools", metavar="TSV", help=" Table of external tool commands (mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, DeepTMHMM, SignalP). Default: the tools_table.tsv next to FlaGs3.py. ")
 	parser.add_argument("-th", "--tmhmm", action="store_true", help=" Predict transmembrane regions (DeepTMHMM, via BioLib cloud) and draw them as double red dotted lines in the domain figure. Off by default; needs pybiolib and network. ")
 	parser.add_argument("-sp", "--signalp", action="store_true", help=" Predict signal peptides (SignalP-6, via BioLib cloud) and draw them as black triangles in the domain figure. Off by default; needs pybiolib and network. ")
+	parser.add_argument("-df", "--defensefinder", action="store_true", help=" Call anti-phage defence systems with DefenseFinder and draw each one as a band spanning its genes, labelled with the system name. Runs on the neighbourhood genes, so it follows -g/-r and ignores -sr. Needs defensefinder_installer.sh. ")
+	parser.add_argument("-pl", "--padloc", action="store_true", help=" Call anti-phage defence systems with PadLoc, drawn the same way as DefenseFinder's. Both can run together; a system both tools agree on is drawn once and the called_by column names both. Needs padloc_installer.sh. ")
+	parser.add_argument("-gn", "--genomad", action="store_true", help=" Scan for proviruses and plasmids with geNomad and draw them as bands like Sismis' secretion systems. Each band is labelled with what geNomad actually called it -- the virus taxon, or plasmid/conjugative plasmid -- not a generic 'mobile element'. Uses -sr like Sismis does, so it sees a window around each query rather than whole genomes. Needs genomad and its database; run genomad_installer.sh then genomad_loader.sh. ")
+	parser.add_argument("-gdb", "--genomad_db", metavar="DIR", help=" geNomad database directory, overriding the db column of the genomad row in tools_table.tsv. ")
 	parser.add_argument("-ss", "--sismis", action="store_true", help=" Scan each assembly's genomic FASTA for secretion systems using Sismis (github.com/lmc297/Sismis) and write <dir>_secretion.tsv, noting which query neighborhoods (if any) each hit overlaps. Downloads the genomic FASTA per assembly. Off by default; needs sismis installed (pip install sismis). ")
 	parser.add_argument("-k", "--keep", action="store_true", help=" Keep the downloaded assemblies instead of deleting the temporary directory at the end. ")
 	parser.add_argument("-ul", "--use_local", metavar="DIR", help=" Directory of local .gff/.faa genome files to search before falling back to NCBI. Files may be gzipped; a genome is a .gff and .faa sharing a basename. ")
@@ -1419,9 +1471,86 @@ class Scans(NamedTuple):
 	rows: dict
 	statuses: dict
 	features: dict
+	scanner: object = None
+	genomad: object = None
+	genomad_hits: list = ()
+	genomad_statuses: dict = {}
+	genomad_scanner: object = None
+	defence: object = None
+	defence_hits: list = ()
+	defence_statuses: dict = {}
+	defence_replicons: int = 0
+
+
+def flags_tools_span(args, tool):
+	import flags_tools
+	span = flags_tools.scan_range(tool, args.scan_range)
+	return "{}bp".format(span) if span else "genome"
+
+
+def scan_windows(args, extractor, mod, tool):
+	import flags_tools
+	span = flags_tools.scan_range(tool, args.scan_range)
+	if not span:
+		return {}
+	spans = {}
+	for row_id, info in extractor.ranges.items():
+		assembly = row_id.rsplit("|", 1)[-1]
+		spans.setdefault(assembly, []).append(
+			(info.contig, max(1, info.q_start - span), info.q_end + span))
+	return {assembly: mod.merge_windows(entries, args.scan_margin,
+										extractor.contig_lengths(assembly))
+			for assembly, entries in spans.items()}
+
+
+def scan_outcome(statuses):
+	ok, failed, skipped = 0, [], []
+	for assembly, status in statuses.items():
+		if status.startswith("error"):
+			failed.append((assembly, status))
+		elif status.startswith("skipped"):
+			skipped.append((assembly, status))
+		else:
+			ok += 1
+	return ok, failed, skipped
+
+
+def report_scan(label, statuses, hits, noun, verbose):
+	ok, failed, skipped = scan_outcome(statuses)
+	if failed and not ok:
+		print("Warning: {} failed on every genome. First error: {}".format(
+			label, failed[0][1]))
+		print("         See <prefix>_{}_diagnostics.txt, and the "
+			  "'--- {} (exit N) ---' block in <prefix>_console.log for the "
+			  "tool's own message.".format(label.lower(), label.lower()))
+	elif failed:
+		print("Warning: {} failed on {} of {}; the rest were scanned. "
+			  "See <prefix>_{}_diagnostics.txt.".format(
+				  label, len(failed), plural(len(statuses), "genome"),
+				  label.lower()))
+	if verbose and ok:
+		print(">> {}: scanned {}, found {}{}".format(
+			label, plural(ok, "genome"), plural(len(hits), noun),
+			"" if not skipped else
+			" ({} skipped)".format(len(skipped))), flush=True)
+
+
+def row_spans(all_neighborhoods):
+	rows = {}
+	for g in all_neighborhoods:
+		assembly = g.query.rsplit("|", 1)[-1]
+		if g.query in rows:
+			_, contig, lo, hi = rows[g.query]
+			rows[g.query] = (assembly, contig, min(lo, g.start), max(hi, g.end))
+		else:
+			rows[g.query] = (assembly, g.contig, g.start, g.end)
+	return rows
 
 
 def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings):
+	genomad_box = {"mod": None, "hits": [], "statuses": {}, "scanner": None}
+	defence_box = {"mod": None, "hits": [], "statuses": {}, "replicons": 0}
+	sismis_scanner = []
 	sismis_mod = None
 	sismis_hits: List = []
 	sismis_rows: Dict[str, Tuple[str, str, int, int]] = {}
@@ -1446,21 +1575,97 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 				rows[g.query] = (assembly, contig, min(lo, g.start), max(hi, g.end))
 			else:
 				rows[g.query] = (assembly, g.contig, g.start, g.end)
+		span = flags_tools_span(args, "sismis")
 		scanner = mod.SismisScanner(out_dir=os.path.join(args.output, "sismis"))
+		scanner.windows_dir = os.path.join(args.output, "windows")
+		scanner.window_key = span
+		windows = scan_windows(args, extractor, mod, "sismis")
+		jobs = []
 		for assembly in sorted({asm for asm, _, _, _ in rows.values()}):
 			genome_path = downloaded.get(assembly, GenomeFiles()).genome
 			if not genome_path:
 				statuses[assembly] = "skipped: no genomic FASTA downloaded"
 				continue
-			try:
-				found = scanner.scan_assembly(assembly, genome_path)
-				hits.extend(found)
-				statuses[assembly] = ("{} secretion system(s) predicted".format(len(found))
-									   if found else "no secretion system predicted")
-			except Exception as e:
-				statuses[assembly] = "error: {}".format(e)
+			jobs.append((assembly, genome_path, windows.get(assembly, [])))
+		if jobs:
+			hits = scanner.scan(jobs, statuses)
 		sismis_mod = mod
+		sismis_scanner.append(scanner)
 		return hits, rows, statuses, time.perf_counter() - t
+
+	def _run_defence():
+		t = time.perf_counter()
+		wanted = [n for n, flag in (("defensefinder", args.defensefinder),
+									("padloc", args.padloc)) if flag]
+		if not (wanted and all_neighborhoods):
+			return [], {}, 0, 0.0
+		try:
+			import flags_defence as mod
+		except ImportError as e:
+			print("Warning: defence system calling could not be loaded ({}); "
+				  "skipping.".format(e))
+			return [], {}, 0, time.perf_counter() - t
+		wide = [g for row in extractor.window_genes.values() for g in row]
+		replicons = mod.build_replicons(wide or all_neighborhoods)
+		scanner = mod.DefenceScanner(out_dir=os.path.join(args.output, "defence"),
+									 threads=args.cpu or 0)
+		hits = []
+		for tool in wanted:
+			ok, where = scanner.available(tool)
+			if not ok:
+				print("Warning: --{} needs {}; skipping.".format(tool, where))
+				note_skipped(args, tool, where)
+				scanner.statuses[tool] = "skipped: {}".format(where)
+				continue
+			try:
+				hits.extend(scanner.run(
+					tool, replicons,
+					extractor.window_sequences or extractor.sequences))
+			except Exception as e:
+				scanner.statuses[tool] = "error: {}".format(e)
+		defence_box["mod"] = mod
+		return (mod.merge_calls(hits), scanner.statuses, len(replicons),
+				time.perf_counter() - t)
+
+	def _run_genomad():
+		t = time.perf_counter()
+		statuses, hits = {}, []
+		if not (args.genomad and all_neighborhoods):
+			return hits, statuses, 0.0
+		try:
+			import flags_genomad as mod
+		except ImportError as e:
+			print("Warning: --genomad could not be loaded ({}); skipping.".format(e))
+			return hits, statuses, time.perf_counter() - t
+		import flags_tools
+		database = args.genomad_db or flags_tools.get("genomad")[1]
+		scanner = mod.GenomadScanner(
+			out_dir=os.path.join(args.output, "genomad"),
+			database=database or "", threads=args.cpu or 0,
+			windows_dir=os.path.join(args.output, "windows"),
+			window_key=flags_tools_span(args, "genomad"))
+		ok, where = scanner.available()
+		if not ok:
+			print("Warning: --genomad needs geNomad and {}; skipping.".format(where))
+			note_skipped(args, "genomad", where)
+			return hits, statuses, time.perf_counter() - t
+		windows = scan_windows(args, extractor, mod, "genomad")
+		jobs = []
+		for assembly in sorted({asm for asm, _, _, _ in row_spans(all_neighborhoods).values()}):
+			genome_path = downloaded.get(assembly, GenomeFiles()).genome
+			if not genome_path:
+				statuses[assembly] = "skipped: no genomic FASTA downloaded"
+				continue
+			jobs.append((assembly, genome_path, windows.get(assembly, [])))
+		if jobs:
+			hits = scanner.scan(jobs, statuses)
+			if args.verbose:
+				print(">> geNomad: {} over {}".format(
+					plural(getattr(scanner, "batches", 1), "invocation"),
+					plural(len(jobs), "genome")), flush=True)
+		genomad_box["mod"] = mod
+		genomad_box["scanner"] = scanner
+		return hits, statuses, time.perf_counter() - t
 
 	def _run_tmhmm():
 		t = time.perf_counter()
@@ -1497,7 +1702,9 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 		return sp, time.perf_counter() - t
 
 	tm, sp = {}, {}
-	active = [n for n, flag in (("sismis", args.sismis), ("tmhmm", args.tmhmm),
+	active = [n for n, flag in (("sismis", args.sismis), ("genomad", args.genomad),
+								 ("defence", args.defensefinder or args.padloc),
+								 ("tmhmm", args.tmhmm),
 								 ("signalp", args.signalp)) if flag]
 	if active:
 		if args.verbose:
@@ -1512,18 +1719,38 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 				or (args.signalp and not args.local_signalp)):
 			import flags_features as feat_mod
 			feat_mod.warm_up()
-		task = {"sismis": _run_sismis, "tmhmm": _run_tmhmm, "signalp": _run_signalp}
-		with ThreadPoolExecutor(max_workers=3) as pool:
+		task = {"sismis": _run_sismis, "genomad": _run_genomad,
+				"defence": _run_defence,
+				"tmhmm": _run_tmhmm, "signalp": _run_signalp}
+		with ThreadPoolExecutor(max_workers=len(task)) as pool:
 			futures = {pool.submit(task[name]): name for name in active}
 			for fut in as_completed(futures):
 				name = futures[fut]
 				if name == "sismis":
 					sismis_hits, sismis_rows, sismis_statuses, elapsed = fut.result()
 					timings["sismis_scan"] = elapsed
-					if sismis_mod and args.verbose:
-						print(">> sismis: scanned {}, found {}".format(
-							plural(len(sismis_statuses), "assembly", "assemblies"),
-							plural(len(sismis_hits), "secretion system")), flush=True)
+					if sismis_mod:
+						report_scan("sismis", sismis_statuses, sismis_hits,
+									"secretion system", args.verbose)
+				elif name == "genomad":
+					genomad_box["hits"], genomad_box["statuses"], elapsed = fut.result()
+					timings["genomad_scan"] = elapsed
+					report_scan("geNomad", genomad_box["statuses"],
+								genomad_box["hits"], "mobile element", args.verbose)
+				elif name == "defence":
+					(defence_box["hits"], defence_box["statuses"],
+					 defence_box["replicons"], elapsed) = fut.result()
+					timings["defence_scan"] = elapsed
+					bad = [t for t, v in defence_box["statuses"].items()
+						   if v.startswith("error")]
+					if bad and not defence_box["hits"]:
+						print("Warning: {} produced nothing but an error. See "
+							  "<prefix>_defence_diagnostics.txt and the console "
+							  "log.".format(" and ".join(sorted(bad))))
+					elif args.verbose:
+						print(">> defence systems: {} across {}".format(
+							plural(len(defence_box["hits"]), "system"),
+							plural(defence_box["replicons"], "neighbourhood")), flush=True)
 				elif name == "tmhmm":
 					tm, elapsed = fut.result()
 					timings["tmhmm_scan"] = elapsed
@@ -1539,7 +1766,12 @@ def run_background_scans(args, extractor, downloaded, all_neighborhoods, timings
 		for acc, regs in sp.items():
 			features.setdefault(acc, []).extend(regs)
 
-	return Scans(sismis_mod, sismis_hits, sismis_rows, sismis_statuses, features)
+	return Scans(sismis_mod, sismis_hits, sismis_rows, sismis_statuses, features,
+				 sismis_scanner[0] if sismis_scanner else None,
+				 genomad_box["mod"], genomad_box["hits"],
+				 genomad_box["statuses"], genomad_box["scanner"],
+				 defence_box["mod"], defence_box["hits"],
+				 defence_box["statuses"], defence_box["replicons"])
 
 
 def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
@@ -1666,7 +1898,8 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 
 def print_summary(args, prefix, extractor, families, rna_families, figures_written,
 				  tree_written, want_tree, domain_table_written, features, sismis_mod,
-				  blast_hits, collapse_written=False):
+				  blast_hits, collapse_written=False, genomad_written=False,
+				  defence_written=False):
 	print("\n{} -> {}".format(
 		plural(len(extractor.sequences), "flanking protein"),
 		plural(len(families) - len(rna_families), "family", "families")))
@@ -1685,6 +1918,10 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 		print("  {}_features.tsv".format(prefix))
 	if args.sismis and sismis_mod:
 		print("  {}_secretion.tsv / {}_sismis_diagnostics.txt".format(prefix, prefix))
+	if genomad_written:
+		print("  {}_genomad.tsv / {}_genomad_diagnostics.txt".format(prefix, prefix))
+	if defence_written:
+		print("  {}_defence.tsv / {}_defence_diagnostics.txt".format(prefix, prefix))
 	for suffix in ("_operon.tsv", "_clusters.tsv", "_outdesc.txt", "_speciesInfo.txt",
 				   "_QueryStatus.txt", "_flankgene_Report.log", "_jackhits.tsv",
 				   "_accessionIssues.txt", "_tree.fasta", "_flankgene.fasta", "_all.fasta",
@@ -1741,6 +1978,8 @@ def main():
 		sys.exit("Error: --range must be a positive number of bases.")
 	if args.scan_range is not None and args.scan_range < 1:
 		sys.exit("Error: --scan_range must be a positive number of bases.")
+	if args.scan_margin < 0:
+		sys.exit("Error: --scan_margin cannot be negative.")
 	if args.gene < 0:
 		sys.exit("Error: --gene cannot be negative.")
 	if args.cluster_collapse:
@@ -1890,13 +2129,14 @@ def main():
 	failures: Dict[str, str] = {}
 	if ncbi_assemblies:
 		dl = AssemblyDownloader(out_dir=args.temporary, workers=dl_workers, rate=dl_rate,
-								want_rna=args.cluster_rna, want_genome=args.sismis)
+								want_rna=args.cluster_rna,
+								want_genome=args.sismis or args.genomad)
 		downloaded.update(dl.download_many(ncbi_assemblies, progress("NCBI")))
 		failures.update(dl.failures)
 		timings["3a_download_ncbi"] = time.perf_counter() - t0; t0 = time.perf_counter()
 	if mgnify_assemblies:
 		mg = MgnifyGenomeDownloader(out_dir=args.temporary, workers=dl_workers, rate=dl_rate,
-									want_genome=args.sismis or args.cluster_rna)
+									want_genome=args.sismis or args.genomad or args.cluster_rna)
 		downloaded.update(mg.download_many(mgnify_assemblies, progress("MGnify")))
 		failures.update(mg.failures)
 		timings["3b_download_mgnify"] = time.perf_counter() - t0; t0 = time.perf_counter()
@@ -1916,7 +2156,12 @@ def main():
 									  scan_range=args.scan_range,
 									  label_assembly=args.max_assemblies > 1)
 	all_neighborhoods = []
-	matched = set()  
+	matched = set()
+	# Plan the work in input order, then do it grouped by assembly. Each GFF and
+	# protein table is parsed once either way, but grouping lets the parsed copy
+	# be freed as soon as that assembly is finished, which is the difference
+	# between a bounded footprint and tens of gigabytes on a large input.
+	plan = []
 	for protein, asms in protein_to_assemblies.items():
 		for asm in asms:
 			files = downloaded.get(asm, GenomeFiles())
@@ -1926,13 +2171,25 @@ def main():
 				acceptable = local_acceptable.get(protein, {}).get(asm)
 			else:
 				acceptable = mapper.accessions_in.get(protein, {}).get(asm)
-			rows = extractor.extract(
+			plan.append((protein, asm, acceptable, files))
+
+	grouped: Dict[str, List[int]] = {}
+	for i, entry in enumerate(plan):
+		grouped.setdefault(entry[1], []).append(i)
+	extracted: Dict[int, list] = {}
+	for asm, indexes in grouped.items():
+		for i in indexes:
+			protein, _, acceptable, files = plan[i]
+			extracted[i] = extractor.extract(
 				asm, files.gff, files.faa, protein, acceptable,
 				rna_path=files.rna if args.cluster_rna else None,
 				genome_path=files.genome if args.cluster_rna else None)
-			if rows:
-				matched.add(protein)
-				all_neighborhoods.extend(rows)
+		extractor.forget(asm)
+	for i, (protein, asm, _, _) in enumerate(plan):
+		rows = extracted.get(i)
+		if rows:
+			matched.add(protein)
+			all_neighborhoods.extend(rows)
 	timings["4_extract_neighbors"] = time.perf_counter() - t0; t0 = time.perf_counter()
 	if args.verbose:
 		print(">> extracted {} flanking-gene records; {} of {} queries matched".format(
@@ -2105,11 +2362,40 @@ def main():
 			print("Warning: could not write the feature table ({}).".format(e))
 	t0 = time.perf_counter()
 
+	if scans.defence:
+		t0 = time.perf_counter()
+		dmod = scans.defence
+		dmatches = dmod.match_rows(scans.defence_hits, row_spans(all_neighborhoods))
+		dmod.write_report(scans.defence_hits, dmatches, out_path("_defence.tsv"))
+		dmod.write_diagnostics(scans.defence_statuses, scans.defence_replicons,
+							   out_path("_defence_diagnostics.txt"))
+		timings["9c_defence_report"] = time.perf_counter() - t0
+
+	if args.genomad and scans.genomad:
+		t0 = time.perf_counter()
+		gmod = scans.genomad
+		gmatches = gmod.match_rows(scans.genomad_hits, row_spans(all_neighborhoods))
+		gmod.write_report(scans.genomad_hits, gmatches, out_path("_genomad.tsv"))
+		gscanner = scans.genomad_scanner
+		gmod.write_diagnostics(
+			scans.genomad_statuses, out_path("_genomad_diagnostics.txt"),
+			scanned=getattr(gscanner, "scanned_bases", None),
+			windows=getattr(gscanner, "window_count", None),
+			genome_size={a: sum(extractor.contig_lengths(a).values())
+						 for a in scans.genomad_statuses if extractor.contig_lengths(a)})
+		timings["9b_genomad_report"] = time.perf_counter() - t0
+
 	if args.sismis and sismis_mod:
 		t0 = time.perf_counter()
 		matches = sismis_mod.match_rows(sismis_hits, sismis_rows)
 		sismis_mod.write_report(sismis_hits, matches, out_path("_secretion.tsv"))
-		sismis_mod.write_diagnostics(sismis_statuses, out_path("_sismis_diagnostics.txt"))
+		scanner = scans.scanner
+		sismis_mod.write_diagnostics(
+			sismis_statuses, out_path("_sismis_diagnostics.txt"),
+			scanned=getattr(scanner, "scanned_bases", None),
+			windows=getattr(scanner, "window_count", None),
+			genome_size={a: sum(extractor.contig_lengths(a).values())
+						 for a in sismis_statuses if extractor.contig_lengths(a)})
 		timings["9_sismis_report"] = time.perf_counter() - t0
 
 	adjacency = dict(clusterer.adjacency)
@@ -2167,7 +2453,9 @@ def main():
 
 	print_summary(args, prefix, extractor, families, rna_families, figures_written,
 				  tree_written, want_tree, domain_table_written, features,
-				  sismis_mod, blast_hits, collapse_written=bool(collapse_result))
+				  sismis_mod, blast_hits, collapse_written=bool(collapse_result),
+				  genomad_written=bool(scans.genomad),
+				  defence_written=bool(scans.defence))
 	if args.verbose:
 		print("\n--- timing (seconds) ---")
 		for stage in sorted(timings):

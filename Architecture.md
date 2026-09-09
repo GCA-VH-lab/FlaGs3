@@ -576,6 +576,328 @@ non-200 without recording anything, so HTTP 429 throttling was invisible and
 looked like a slow network. Failures now always land in `self.failures` with the
 status code and any `Retry-After` value.
 
+### Defence systems run on a synthetic GFF
+
+DefenseFinder and PadLoc call *systems*, which means they need gene order and
+gene adjacency, not just sequences. They are gene-based tools, so they take the
+neighbourhood from `-g`/`-r` and never look at `-sr`.
+
+Each neighbourhood is written as its own synthetic replicon, `r0`, `r1` and so
+on. That boundary is the point: two queries on the same contig but 400 kb apart
+would otherwise sit next to each other in the file and invite a system call
+across the gap that does not exist. One replicon per neighbourhood makes gene
+adjacency mean what it should.
+
+Genes keep their **real coordinates**, and `##sequence-region` runs from the
+first gene's start rather than 1, so gene spacing and contig-edge tests stay
+truthful. The consequence is that nothing has to be mapped back: a system's band
+is the span of the genes it named, looked up by tag. Unlike the Sismis and
+geNomad paths there is no offset table here at all, because there is no slicing.
+
+Both tools produce a system-to-protein assignment and differ only in how they
+spell it, so one reader each is enough. A system both tools call on the same span
+is emitted once, with `called_by` naming both -- two identical bands stacked on
+one another would just look like a rendering fault.
+
+### Two tool tables, one of them ignored
+
+`tools_table.tsv` is the shipped default and the repository tracks it. Every
+installer writes `tools_table.local.tsv`, which `.gitignore` covers, and `load()`
+reads the default first and layers the local file over it row by row. A local row
+only carries what it changes; blank cells fall back to the default rather than
+blanking it.
+
+The point is that an installed path is a property of a machine, not of the
+project. Writing them into the tracked table meant every install produced a diff
+full of somebody's home directory, and those diffs got committed.
+
+### Parsed genomes are freed as they are finished
+
+`_gff_cache` and `_faa_cache` are keyed by assembly and were never evicted, so a
+run held every genome it had ever touched. Measured at 4.6 MB per assembly, which
+is nothing for a demo and 32 GB for a subfamily of 6913.
+
+Extraction is planned in input order but performed grouped by assembly, so each
+GFF and protein table is still parsed exactly once and `forget()` can drop it the
+moment that assembly is done. Retained memory falls 226x, to 0.14 GB for the same
+subfamily. `_contig_len` survives eviction because the scanning tools and the
+range report read it after extraction is over, and it is small.
+
+Grouping changes the order sequences arrive in, which used to change the output:
+family numbers came out of a dict whose insertion order followed extraction
+order. Components are now ordered by `(-size, first member)` and clustering
+iterates sorted names, so the same input gives the same family numbers however it
+was ordered. FASTA output is sorted for the same reason. The row-ordered tables
+still follow the input, which is what they are for.
+
+### Attributes are parsed once per line
+
+`_attr` built and searched a regex for every attribute lookup, and every GFF line
+needs three to six -- 609,534 regex searches for 26 genomes. Splitting the
+attribute column into a dict once per line is 10x faster on that path and halves
+the time in `_genes`. First occurrence wins, as the regex did, since GFF allows
+repeated keys.
+
+### A tool's cost can be per invocation, not per base
+
+Measured on two genomes: geNomad took 1109 s on whole genomes and 918 s on 50 kb
+windows. Cutting 74% of the sequence bought 17% of the time, because the run is
+dominated by loading a 1.6 GB database and a neural model. At 459 s per
+invocation, one call per assembly is 37 days for a subfamily of 6913.
+
+So the batching, not the windowing, is what makes it possible. `write_batches`
+puts every assembly's windows into as few FASTA files as it can, each record
+carrying an entry in an offset table that names the assembly it came from, so one
+invocation covers thousands of genomes and hits still map back to the right
+genome and coordinates. `MAX_BATCH_BASES` caps a file at 200 Mb so a subfamily
+becomes a handful of calls rather than one unbounded one.
+
+Windowing still matters -- it cuts what the tool reads and it is what makes a
+batch file a sensible size -- but on its own it was never going to be enough.
+
+Sismis gets the same treatment for the same reason.
+
+### One copy of the windows
+
+Sismis and geNomad both take nucleotide FASTA, and cutting the same windows twice
+costs hundreds of gigabytes across a full batch. `shared_batches` keys the cut
+files by the span that produced them, so tools asking for the same span reuse one
+set. The key is the span rather than the tool, because a `scan_range` override in
+`tools_table.tsv` genuinely does mean different windows and those must not be
+shared. A lock guards the store, since the scanning tools run on separate threads.
+
+The files are kept rather than cleaned up: they are the exact input the tools saw,
+which is what makes a call reproducible after the fact.
+
+### Defence tools read the window, not the drawing
+
+`-g` decides what is clustered and drawn. It should not decide what a system
+caller sees: a defence system spanning genes just outside an 11-gene neighbourhood
+would be truncated into a fragment or missed. `window_genes` holds every gene
+within `-sr` of the query, collected in the same pass as the drawn neighbourhood
+and costing nothing extra since the GFF and FASTA are already parsed and cached.
+DefenseFinder and PadLoc get those; clustering and the figures still get the
+drawn set.
+
+On real data this is 101 genes against 11. Systems found outside the drawn
+neighbourhood appear in `_defence.tsv` and are clipped from the figure, which is
+the right way round -- the table is the result, the figure is a view of part of it.
+
+### Overlapping bands need lanes
+
+Every band on a row was drawn at the same `y` with the same height. Two tools
+calling the same locus produce two hits that `merge_calls` will not merge when
+their spans differ by a gene, and the narrower one was then drawn inside the
+wider one and invisible. On real data that reads as "DefenseFinder is in the
+legend but has no band", which is exactly what it looked like.
+
+`_band_lanes` does greedy interval partitioning per row: bands are placed in the
+first lane whose last band ended before this one starts, so two bands share a
+lane only when they do not overlap. The row's band height is divided by the lane
+count, so a row with three overlapping systems shows three thin bars rather than
+one bar and two lies. Rows are independent, and a row with no overlap looks
+exactly as it did.
+
+### Bands are numbered when names will not fit
+
+A row can carry several defence systems and `CBASS_Type_II` beside `RM_Type_I`
+beside `Gabija` does not fit next to a row. `BAND_CODES` maps a hit's source to a
+prefix -- `defence` to `D` -- and types from those sources are numbered `D1`,
+`D2` in the legend order, stamped on the band itself when it is wide enough for
+the text, and used for the labels beside the row. Sources without a prefix keep
+their names, so Sismis' `T6SS` and geNomad's `Caudoviricetes` are unchanged;
+those rarely carry more than one or two per row. Adding a source to `BAND_CODES`
+is the whole change if that stops being true.
+
+Numbering is global within a source rather than per tool, so a system both tools
+called keeps one number and one colour in both legend panels.
+
+### The legend is split by what made the call
+
+Band hits carry the tool that called them, from the `called_by` column, and
+`_band_panels` groups the legend by it. A system both tools agree on appears
+under both, with the same number, which is what makes agreement and disagreement
+visible at a glance. Sources with no calling tool -- Sismis, geNomad -- fall into
+one shared panel, since splitting a single-tool legend by tool would be noise.
+
+### A database is identified by its contents
+
+`genomad download-database DEST` creates `DEST/genomad_db`. The loader defaulted
+`DEST` to `./genomad_db`, so the database landed in `genomad_db/genomad_db`, and
+then looked for it with `find "${DEST}" -maxdepth 2 -type d -name genomad_db`.
+`find` matches the directory it starts from, and depth 0 comes first, so `head -1`
+returned the empty wrapper. `tools_table.tsv` was given a path containing nothing
+but another directory.
+
+Both halves are fixed, but only the second one matters: the loader now finds the
+database by looking for `genomad_marker_metadata.tsv` or `version.txt` and taking
+the directory holding it. A name can collide with its own parent; contents cannot.
+The default destination no longer ends in `genomad_db` either, so nothing nests
+in the first place.
+
+`resolve_database` applies the same test at run time and descends one level into
+`genomad_db` when the configured path is a wrapper, printing a note saying so.
+Existing installs with the nested layout keep working without anyone editing the
+table, and the note means the behaviour is visible rather than magical. A
+directory that is neither says what it lacked and where the real one usually sits.
+
+### Finding a binary is not the same as being ready to run
+
+`available()` was written three times, once per tool module, and each copy ended
+its absolute-path branch with `return True`. Finding the executable was treated as
+the whole answer. For geNomad it is not: the command also needs a database, and
+because the installer writes an absolute path, that branch returned early and the
+database check below it never ran. geNomad was launched with an empty `{db}` and
+answered `Missing argument 'DATABASE'`.
+
+`flags_tools.locate` now owns finding the binary, and each module checks what else
+that tool needs afterwards, unconditionally. Splitting the two questions is the
+point -- one copy of the resolution logic cannot drift, and a readiness check
+cannot be short-circuited by how the tool happened to be installed.
+
+`missing_values` is the backstop. It compares a command's placeholders against the
+values being substituted and refuses to run when one the command actually uses is
+empty, because `{db}` expanding to nothing does not fail loudly -- it silently
+produces a command with one fewer argument, which the tool then misreads.
+
+### Installers must not ask Python where an environment is
+
+The installers used to find their environment with
+`conda run -n <env> python -c "import sys; print(sys.prefix)"`. That works only
+when the environment contains Python. PadLoc is an R package, so `python`
+resolved to whatever was next on `PATH` -- the caller's own interpreter -- and
+answered `/usr`. The installer then looked for `/usr/bin/padloc`, did not find
+it, and reported the install as broken when it had succeeded.
+
+`env_prefix` asks `conda run -n <env> printenv CONDA_PREFIX` instead. `printenv`
+is coreutils, so it is present whatever the environment holds, and `CONDA_PREFIX`
+is set by the activation `conda run` performs. `conda env list` parsed by name is
+the fallback, and a prefix that does not resolve to a directory is a hard error
+rather than a path that silently points somewhere wrong.
+
+Each installer verifies its binary exists **before** using it, and lists the
+environment's `bin` when it does not, since "missing after the install" is not
+much help on its own. Fetching models or databases happens after that check, so a
+mislocated environment fails at the cheap step rather than partway through a
+download.
+
+`deeptmhmm_installer.sh` and `signalp_installer.sh` still use the Python form.
+Both wrap Python tools, so their environments contain Python by construction and
+the assumption holds there.
+
+### A failed scan is not an empty scan
+
+Per-genome statuses used to be counted only by length, so "scanned 2 assemblies,
+found 0 mobile elements" was printed whether the tool had run and found nothing
+or crashed on both. Those are opposite conclusions and the second one looked like
+the first.
+
+`scan_outcome` splits statuses into scanned, failed and skipped. Failure on
+everything is a warning naming the first error and where to read the rest;
+partial failure says how many. The verbose line only claims what was actually
+scanned.
+
+Tool output goes through `flags_tools.brief`, which keeps the **last** few
+non-empty lines rather than a character slice. Tools announce themselves before
+they fail, so the head of their output is a banner and the tail is the reason --
+slicing from the front reported "Executing geNomad annotate (v1.12.0)" as the
+error. Statuses also have their whitespace collapsed before being written, since
+a status holding a newline splits its own row in a TSV.
+
+### Absolute tool paths need their own bin on PATH
+
+`tools_table.tsv` rows written by the installers point at an absolute path inside
+a conda environment, like `.../envs/flags3-genomad/bin/genomad`. Calling that path
+runs the right binary but does **not** activate the environment, so the
+subprocess inherits the parent's `PATH`.
+
+Self-contained tools do not care. Tools that shell out to siblings do: geNomad
+looks up `mmseqs` and `aragorn` by name, finds neither, and stops partway with
+"These dependencies are missing" even though both are installed in the very
+directory it was launched from.
+
+`flags_tools.env_for` prepends the program's own directory to `PATH` whenever the
+command is an absolute path, which is exactly what activation would have done for
+sibling lookups. It returns `None` for relative commands and when the directory is
+already on `PATH`, so `subprocess.run(env=None)` inherits normally and nothing
+changes for tools that were already fine. Every call site that runs a
+`tools_table` command passes it.
+
+The alternative was `conda run -n <env>`, which activates properly but adds a
+wrapper process and its own output buffering to every call.
+
+### One rule for where a tool looks
+
+Tools split by what they consume, and the split decides which flag controls them:
+
+| consumes | tools | controlled by |
+|---|---|---|
+| individual genes or proteins | domain scan, DeepTMHMM, SignalP | `-g` / `-r`, i.e. the neighbourhood |
+| a stretch of genomic sequence | Sismis, geNomad | `-sr`, whole genome when absent |
+
+There is no third case and no per-tool special pleading in the code. A tool that
+wants a different span than `-sr` says puts a number in the `scan_range` column of
+`tools_table.tsv`, or `genome` to opt out of windowing entirely -- the same table
+that already decides how each tool is invoked.
+
+`flags_scan` holds the window machinery once: merging, slicing, and mapping
+coordinates back. `flags_secretion` and `flags_genomad` differ only in what they
+shell out to and how they name a hit.
+
+### Scanning windows instead of whole genomes
+
+`--sismis` used to hand each assembly's whole genomic FASTA to Sismis. It now
+cuts the contig around each query instead, which on real data scans 2-6% of a
+genome rather than all of it.
+
+Windows are **merged before scanning**, not scanned per row. Two queries 30 kb
+apart on one contig produce one interval, not two overlapping scans, and every
+window for an assembly goes into a single FASTA as separate records, so an
+assembly is one subprocess however many queries land on it.
+
+`--scan_margin` exists because a system straddling the window edge would
+otherwise be cut in half and called as a fragment or missed. The margin is scanned
+but not treated as in-range: a hit lying wholly inside the analysis window is
+`full`, one reaching into the margin is `partial`, and both are kept. Merging
+happens on the padded intervals, so adjacent windows whose margins touch also
+collapse into one.
+
+Coordinates come back relative to the slice, so each record is written as `w{n}`
+and mapped through an offset table on the way out. Nothing downstream sees slice
+coordinates.
+
+Without `-sr` the tools get whole genomes, which is what they got before windows
+existed, so the flag is the whole of the switch.
+
+### geNomad names what it found
+
+geNomad calls proviruses and plasmids, and a band saying "mobile element" wastes
+the call. The virus band is labelled with the lowest rank geNomad assigned --
+`Caudoviricetes`, not `virus` -- and a plasmid band says `plasmid` or
+`conjugative plasmid` depending on whether conjugation genes were found. The
+label is the hit's `type`, which is what the legend and the band colouring key
+on, so two different taxa get two different colours for free.
+
+Proviruses carry a `coordinates` field relative to their record; a whole-record
+call has none and spans the record. Both go through the same offset table as
+Sismis' hits, so nothing downstream sees slice coordinates.
+
+geNomad reuses `_secretion.tsv`'s renderer through a separate `_genomad.tsv` and
+a `genomad` token in `features_allowed`. Bands are bands; the only reason they are
+separate files is that mixing secretion systems and proviruses in one legend
+would be unreadable. `all-in-one` takes both.
+
+#### The passthrough columns are prefixed now
+
+Sismis' own columns are appended to `_secretion.tsv` after the normalised ones,
+and Sismis emits `start`, `end` and `type` -- the same names. `csv.DictReader`
+keeps the **last** value for a duplicated field, so `row["start"]` in
+`flags_redraw` was already reading Sismis' column rather than the normalised one.
+That was harmless while both held the same number. Windowing broke it: the
+normalised column holds a genome coordinate and Sismis' holds a slice-relative
+one, so a band would have been drawn at position 201 instead of 1942310. The
+passthrough columns are now prefixed `sismis_`.
+
 ---
 
 ## Rendering and reporting
@@ -617,7 +939,7 @@ the stages overlap, so summing them would over-count.
 ### External commands live in a table
 
 The scripts split by what they actually do: `pfamA_loader.sh` and
-`defenceFinder_loader.sh` fetch data, while `signalp_installer.sh` and
+`defensefinder_hmm_loader.sh` fetch data, while `signalp_installer.sh` and
 `deeptmhmm_installer.sh` build software environments.
 
 `signalp_installer.sh` and `deeptmhmm_installer.sh` build the fixed environments

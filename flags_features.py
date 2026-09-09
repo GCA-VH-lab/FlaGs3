@@ -153,8 +153,10 @@ class _LocalScanner:
 				cmd[0] = candidate
 		_debug("features: running {} (cwd={})".format(
 			" ".join(cmd), self.directory or os.getcwd()))
+		import flags_tools
 		result = subprocess.run(cmd, cwd=self.directory or None,
-								capture_output=True, text=True)
+								capture_output=True, text=True,
+								env=flags_tools.env_for(cmd))
 		_debug("features: exit {}".format(result.returncode))
 		try:
 			import flags_log

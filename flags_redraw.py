@@ -409,18 +409,67 @@ def _feature_kind(kind: str) -> str:
 EDITOR_LIMIT = 16383   # Illustrator's largest canvas, and librsvg's, in px
 
 
-def _oversize(svg: str):
+def _oversize(svg: str, limit: int = EDITOR_LIMIT):
 	m = re.search(r'width="([\d.]+)" height="([\d.]+)"', svg[:400])
 	if not m:
 		return None
 	w, h = float(m.group(1)), float(m.group(2))
-	if max(w, h) <= EDITOR_LIMIT:
+	if max(w, h) <= limit:
 		return None
 	return int(w), int(h)
 
 
+def plural(n, word, many=None):
+	return "{} {}".format(n, word if n == 1 else (many or word + "s"))
+
+
+def _row_order(data: RunData) -> List[str]:
+	if data.order:
+		return list(data.order)
+	seen = []
+	for g in data.genes:
+		if g.query not in seen:
+			seen.append(g.query)
+	return seen
+
+
+def _rows_subset(data: RunData, rows) -> RunData:
+	keep = set(rows)
+	order = [r for r in (data.order or []) if r in keep] or None
+	return data._replace(genes=[g for g in data.genes if g.query in keep],
+						 order=order)
+
+
+def _rows_per_part(spec, data, rows, full_height, limit) -> int:
+	"""Height is a fixed part -- title, legend, axis -- plus a cost per row, and
+	every part repeats the fixed part. Measuring one probe gives both terms, so
+	the row count comes out of the real layout rather than a guessed margin."""
+	guess = max(1, int(len(rows) * limit / full_height * 0.9))
+	try:
+		probe = render_figure(spec, _rows_subset(data, rows[:guess]))
+		size = _oversize(probe, 0)          # 0 == always report the dimensions
+	except Exception:
+		size = None
+	if size and guess < len(rows):
+		per_row = (full_height - size[1]) / max(len(rows) - guess, 1)
+		fixed = full_height - per_row * len(rows)
+		if per_row > 0:
+			exact = int((limit - fixed) / per_row)
+			if exact >= 1:
+				return min(exact, len(rows))
+	return guess
+
+
+def _splittable(spec: FigureSpec, data: RunData) -> bool:
+	"""A tree panel spans every row at once, so a figure carrying one cannot be
+	cut into parts without pruning the tree to match. Those stay whole."""
+	if spec.mode == "triangles":
+		return False
+	return not (spec.tree_width and data.newick)
+
+
 def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
-			   pdf=False):
+			   pdf=False, max_height: int = EDITOR_LIMIT):
 	"""Render every spec. Returns the list of figure names actually written."""
 	written = []
 	for spec in specs:
@@ -433,14 +482,50 @@ def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
 			if verbose:
 				print(">> figure {!r} skipped: nothing to draw".format(spec.name))
 			continue
+
+		big = _oversize(svg, max_height)
+		parts = []
+		if big and big[1] > max_height and _splittable(spec, data):
+			rows = _row_order(data)
+			per = _rows_per_part(spec, data, rows, big[1], max_height)
+			if per < len(rows):
+				parts = [rows[i:i + per] for i in range(0, len(rows), per)]
+
+		if parts:
+			names = []
+			for n, part in enumerate(parts, 1):
+				try:
+					piece = render_figure(spec, _rows_subset(data, part))
+				except Exception as e:
+					print("Warning: could not draw part {} of figure {!r} "
+						  "({}).".format(n, spec.name, e))
+					continue
+				if not piece:
+					continue
+				name = "{}_part{}".format(spec.name, n)
+				with open(out_path("_{}.svg".format(name)), "w") as out:
+					out.write(piece)
+				names.append(name)
+			if names:
+				print("Note: figure {!r} would be {} px tall, past the {} px canvas "
+					  "limit of Illustrator and librsvg, so it was written as {} "
+					  "of about {} rows each.".format(
+						  spec.name, big[1], max_height,
+						  plural(len(names), "part"), per))
+				written.extend(names)
+				continue
+
 		with open(out_path("_{}.svg".format(spec.name)), "w") as out:
 			out.write(svg)
-		big = _oversize(svg)
 		if big:
+			why = ("it carries a tree panel, which spans every row"
+				   if not _splittable(spec, data)
+				   else "it is too wide rather than too tall")
 			print("Warning: figure {!r} is {}x{} px, past the {} px canvas limit of "
-				  "Illustrator and librsvg. Browsers will still open it. Raise "
-				  "bases_per_pixel or lower row_height in the figure table, or draw "
-				  "fewer rows.".format(spec.name, big[0], big[1], EDITOR_LIMIT))
+				  "Illustrator and librsvg, and cannot be split because {}. "
+				  "Browsers will still open it. Raise bases_per_pixel or lower "
+				  "row_height in the figure table.".format(
+					  spec.name, big[0], big[1], max_height, why))
 		written.append(spec.name)
 	if pdf and written:
 		import flags_pdf
@@ -463,6 +548,12 @@ def main():
     parser.add_argument("--prefix",
                         help="File prefix inside --data. Default: the "
                              "directory's own name, which is what FlaGs3 uses.")
+    parser.add_argument("--max_height", type=int, default=EDITOR_LIMIT,
+                        metavar="PX",
+                        help="Split a figure into parts when it would be taller "
+                             "than this. Default %(default)s, the canvas limit of "
+                             "Illustrator and librsvg. Raise it if you only ever "
+                             "open figures in a browser.")
     parser.add_argument("--write_table", action="store_true",
                         help="Write a starting {} into --data and "
                              "exit, so you have something to edit.".format(
@@ -512,6 +603,7 @@ def main():
             os.path.basename(table)))
 
     written = render_all(specs, data, out_path, verbose=args.verbose,
+                         max_height=args.max_height,
                          pdf=args.pdf)
     if not written:
         sys.exit("Error: nothing was drawn. Check the figure table and that "

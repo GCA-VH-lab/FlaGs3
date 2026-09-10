@@ -151,7 +151,32 @@ class ProteinAssemblyMapper:
 		return {acc: sorted(asm, key=gcf_first)[:self.max_assemblies]
 				for acc, asm in found.items()}
 
+	IPG_CHUNK = 200        # NCBI's recommended ceiling for one efetch
+
 	def _map_ipg(self, proteins: List[str]) -> Dict[str, set]:
+		"""Resolve proteins to assemblies in chunks. One request for thousands of
+		accessions returns a report large enough to time out or come back
+		truncated, and a truncated IPG report is indistinguishable from those
+		proteins having no assembly -- a silent wrong answer rather than an
+		error. A failed chunk is reported and the rest still resolve."""
+		found: Dict[str, set] = {acc: set() for acc in proteins}
+		failed = 0
+		for start in range(0, len(proteins), self.IPG_CHUNK):
+			chunk = proteins[start:start + self.IPG_CHUNK]
+			try:
+				found.update(self._map_ipg_chunk(chunk))
+			except Exception as e:
+				failed += len(chunk)
+				self.unreachable = "{}: {}".format(type(e).__name__, e)
+				debug("IPG chunk {}-{} failed".format(
+					start, start + len(chunk)), exc=True)
+		if failed:
+			print("Warning: {} of {} could not be resolved through IPG; they are "
+				  "reported as unresolved in <prefix>_accessionIssues.txt.".format(
+					  plural(failed, "protein"), len(proteins)))
+		return found
+
+	def _map_ipg_chunk(self, proteins: List[str]) -> Dict[str, set]:
 		queries = set(proteins)
 		time.sleep(self.ncbi_time)
 		handle = Entrez.efetch(db="ipg", id=",".join(proteins),
@@ -1251,7 +1276,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1423,6 +1448,7 @@ def build_parser():
 	parser.add_argument("-sm", "--scan_margin", type=int, default=10000, metavar="BP", help=" Extra sequence handed to the scanning tools beyond the analysis range, so a system straddling the edge is still called whole rather than cut in half. Hits reaching into the margin are kept and marked 'partial' in the coverage column. Set 0 to scan exactly the analysis range. Default = 10000 ")
 	parser.add_argument("-sr", "--scan_range", type=int, metavar="BP", help=" Genomic span around the query gene given to the tools that scan sequence rather than genes (Sismis, geNomad). Without it they get the whole genome, as before. Independent of -g/-r, so -g 5 -sr 50000 clusters 11 genes and scans 100 kb. A tool can override it in the scan_range column of tools_table.tsv. ")
 	parser.add_argument("-m", "--max_assemblies", type=int, default=1, help=" Max assemblies per protein. Default = 1 ")
+	parser.add_argument("-rm", "--remap", action="store_true", help=" Look up again, through IPG, any protein whose paired assembly in the input produced nothing. A protein given with an assembly otherwise never goes near IPG, so a withdrawn assembly, a failed download, or an accession that is simply not in that assembly leaves it unresolved with no second attempt. Off by default because it costs extra NCBI requests and downloads; worth it when the assembly column was compiled some time ago. ")
 	parser.add_argument("-nc", "--no_cross_db", action="store_true", help=" Keep protein and genome in the same database: RefSeq proteins (WP_, NP_, ...) resolve only to GCF_ assemblies and INSDC proteins only to GCA_. Proteins whose only assemblies are in the other database are then reported as unresolved. Does not affect assemblies given explicitly in the input file. ")
 	parser.add_argument("-e", "--ethreshold", type=float, default=1e-3, help=" Jackhmmer inclusion E-value threshold for clustering flanking genes. Default = 1e-3 ")
 	parser.add_argument("-n", "--number", type=int, default=3, help=" Number of jackhmmer iterations for clustering. Default = 3 ")
@@ -1442,6 +1468,7 @@ def build_parser():
 	parser.add_argument("-hc", "--hmm_coverage", action="append", metavar="[NAME=]Q[,H]", help=" Minimum fraction of the protein (Q) and of the model (H) an alignment must span, dropping partial hits. Give NAME= to apply it to one database, or omit NAME to apply it to all. Sensible for full-length protein models such as DefenseFinder (e.g. 0.7,0.5); leave off for domain databases like Pfam, where partial coverage is normal. ")
 	parser.add_argument("-pdf", "--pdf", action="store_true", help=" Also write a PDF beside every figure. Needs one of cairosvg, svglib, rsvg-convert or inkscape; without one the figures are still written as SVG. ")
 	parser.add_argument("-nf", "--no_figures", action="store_true", help=" Run the analysis and write the tables, but draw nothing. Figures can be produced later with flags_redraw.py. ")
+	parser.add_argument("-fh", "--figure_height", type=int, default=16383, metavar="PX", help=" Split a figure into parts when it would be taller than this, writing <name>_part1.svg and so on. The default is the canvas limit of Illustrator and librsvg, past which a figure opens in a browser but nowhere else. Raise it if you only ever view figures in a browser. Figures carrying a tree panel are never split, since the tree spans every row. ")
 	parser.add_argument("-f", "--figures", metavar="TSV", help=" Figure table controlling which figures are drawn and every parameter of how. Default: visualisation_table.tsv, written into the output directory for you to edit and re-apply with flags_redraw.py. ")
 	parser.add_argument("-cl", "--clans", help=" Pfam-A.clans.tsv(.gz): colour domains by clan instead of family. ")
 	parser.add_argument("-ip", "--interpro", default=DEFAULT_INTERPRO, help=" InterPro metadata table (.tsv or .tsv.gz) with 'accession' and 'pfam_members' columns. Adds the InterPro entry, its name and type, and short characterisation/informativeness summaries to _domains.tsv, joined on the Pfam accession. Looked for in the working directory and next to FlaGs3.py; if it is not there the domain table is written without those columns. Default = " + DEFAULT_INTERPRO + " ")
@@ -2190,6 +2217,56 @@ def main():
 		if rows:
 			matched.add(protein)
 			all_neighborhoods.extend(rows)
+
+	# A protein paired with an assembly in the input never went through IPG, so
+	# a withdrawn assembly, a failed download, or an accession that simply is
+	# not in that assembly left it silently unresolved. Retry those through IPG
+	# once, which is the only route that can find where the protein actually
+	# lives.
+	paired = {p for p, _ in proteins_assembly}
+	stranded = sorted(p for p in paired if p not in matched)
+	if stranded and not args.remap and args.verbose:
+		print(">> {} whose paired assembly gave nothing; --remap looks them up "
+			  "again through IPG".format(
+				  plural(len(stranded), "protein")), flush=True)
+	if stranded and args.remap:
+		if args.verbose:
+			print(">> retrying {} through IPG; their paired assembly gave "
+				  "nothing".format(plural(len(stranded), "protein")), flush=True)
+		retry = mapper.map(stranded)
+		fresh = sorted({a for asms in retry.values() for a in asms}
+					   if retry else [])
+		fresh = [a for a in fresh if a not in downloaded and a not in local_files]
+		if fresh:
+			rdl = AssemblyDownloader(out_dir=args.temporary, workers=dl_workers,
+									 rate=dl_rate, want_rna=args.cluster_rna,
+									 want_genome=args.sismis or args.genomad)
+			downloaded.update(rdl.download_many(
+				[a for a in fresh if not MgnifyGenomeDownloader.is_mgnify_accession(a)],
+				progress("IPG retry")))
+			failures.update(rdl.failures)
+		regained = 0
+		for protein in stranded:
+			for asm in retry.get(protein, []):
+				files = downloaded.get(asm, GenomeFiles())
+				if not (files.gff and files.faa):
+					continue
+				rows = extractor.extract(
+					asm, files.gff, files.faa, protein,
+					mapper.accessions_in.get(protein, {}).get(asm),
+					rna_path=files.rna if args.cluster_rna else None,
+					genome_path=files.genome if args.cluster_rna else None)
+				extractor.forget(asm)
+				if rows:
+					matched.add(protein)
+					all_neighborhoods.extend(rows)
+					regained += 1
+					protein_to_assemblies.setdefault(protein, []).append(asm)
+					break
+		timings["4b_ipg_retry"] = time.perf_counter() - t0; t0 = time.perf_counter()
+		if args.verbose:
+			print(">> IPG retry recovered {} of {}".format(
+				regained, len(stranded)), flush=True)
 	timings["4_extract_neighbors"] = time.perf_counter() - t0; t0 = time.perf_counter()
 	if args.verbose:
 		print(">> extracted {} flanking-gene records; {} of {} queries matched".format(
@@ -2425,7 +2502,8 @@ def main():
 	if not args.no_figures:
 		redraw = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 							  "flags_redraw.py")
-		cmd = [sys.executable, redraw, "--data", args.output, "--prefix", prefix]
+		cmd = [sys.executable, redraw, "--data", args.output, "--prefix", prefix,
+			   "--max_height", str(args.figure_height)]
 		if args.figures:
 			cmd += ["--format", args.figures]
 		if args.pdf:

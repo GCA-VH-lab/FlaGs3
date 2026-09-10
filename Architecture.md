@@ -611,6 +611,53 @@ The point is that an installed path is a property of a machine, not of the
 project. Writing them into the tracked table meant every install produced a diff
 full of somebody's home directory, and those diffs got committed.
 
+### A paired assembly is not the last word
+
+A protein given with an assembly in the input skipped IPG entirely, so a
+withdrawn assembly, a failed download, or an accession that simply is not in that
+assembly left the protein unresolved with no second attempt. On a dataset whose
+assembly column was compiled at some earlier date that is a steady, silent loss.
+
+`--remap` retries those proteins through IPG once, which is the only route that
+can find where the protein actually lives, and downloads and extracts whatever
+that finds. The retry runs after extraction rather than after download because
+both failure modes -- no usable genome, and a usable genome without the protein --
+look the same from there, so one code path covers both.
+
+It is opt-in rather than automatic because it spends NCBI requests and possibly a
+second round of downloads on a failure that may be expected. A verbose run always
+reports how many proteins it would have applied to, so the cost can be judged
+before it is paid.
+
+### IPG resolution is chunked
+
+`_map_ipg` put every unresolved accession into one `efetch`. That is fine for a
+demo and wrong at scale: NCBI recommends 200 ids per request, and a report for
+thousands comes back slowly, truncated, or not at all. A truncated IPG report is
+the dangerous case -- it is not an error, it just looks like those proteins have
+no assembly, so the run continues and quietly drops them.
+
+Requests now go in chunks of 200 and a failed chunk costs only its own 200
+accessions; the rest still resolve, and the count that failed is printed and
+recorded. On this dataset the 1336 rows with no assembly written become 7
+requests instead of one.
+
+### Figures too tall to open are written as parts
+
+A subfamily of 8000 rows is a 190,000 px SVG. Browsers open it; Illustrator and
+librsvg refuse, so it cannot be edited or converted to PDF.
+
+`render_all` renders once, measures, and splits only if the result is over
+`-fh`/`--figure_height`, which defaults to 16383 px. Rather than guessing a row count, `_rows_per_part` renders one probe and
+solves the layout: height is a fixed part -- title, legend, axis -- plus a cost
+per row, and two measurements give both terms. A guessed 10% margin left parts 1%
+over the limit, because the fixed part is repeated by every part and does not
+shrink with the row count.
+
+Figures carrying a tree panel are never split, since the tree spans every row and
+cutting the rows without pruning the tree would produce a figure that lies. Those
+are left whole with a warning saying why.
+
 ### Parsed genomes are freed as they are finished
 
 `_gff_cache` and `_faa_cache` are keyed by assembly and were never evicted, so a

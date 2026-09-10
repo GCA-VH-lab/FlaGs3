@@ -38,6 +38,11 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 * Transmembrane helices via DeepTMHMM and signal peptides via SignalP
 * Secretion-system detection via Sismis, matched to neighbourhoods by
   coordinate overlap
+* The sequence-scanning tools take their span from `-sr`, independently of how
+  many genes are clustered, with `-sm` padding it so a system at a window edge is
+  still called whole
+* `--remap` looks a protein up again through IPG when the assembly it was paired
+  with in the input turns out to hold nothing
 
 ### Figures
 
@@ -51,6 +56,11 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   colours and numbers, and every size and spacing value
 * Figures redrawn from a finished run without repeating the analysis, so the
   look can be tuned without re-downloading anything
+* Overlapping bands stacked in lanes, so two tools calling one locus are both
+  visible, with defence systems numbered `D1`, `D2` and the legend split by which
+  tool made the call
+* Figures too tall for an editor written as `<name>_part1.svg` and so on, at a
+  ceiling set by `-fh`
 * PDF output alongside the SVGs, from any run or redraw
 
 ### Results
@@ -73,6 +83,10 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
   Ctrl-C
 
 ## Version history
+
+**2.1.0** — `--remap` looks a protein up again through IPG when its paired
+assembly gives nothing, IPG resolution runs in chunks rather than one request,
+and figures too tall for an editor are written as parts
 
 **2.0.0** — defence system and mobile element calling, windowed scanning, and
 the scale work needed to run all of it on thousands of genomes.
@@ -98,8 +112,11 @@ rather than following whatever order the input arrived in.
 * DefenseFinder and PadLoc see every gene within `-sr` of the query rather than
   only the drawn neighbourhood, so a system reaching past the figure is still
   called whole
-* Installers for MMseqs2, geNomad, DefenseFinder and PadLoc, all wired into
-  `build.sh`, none needing a user-supplied package
+* Sismis and geNomad invoked once for many genomes rather than once each, since
+  their cost is dominated by loading a database
+* Installers for MMseqs2, geNomad, DefenseFinder and PadLoc, all offered by
+  `build.sh` in turn or selected with `--all`, `--none` and `--with LIST`; none
+  needs a user-supplied package
 * Machine-specific tool paths go to a git-ignored `tools_table.local.tsv`, and
   `tools_table.tsv` keeps the shipped defaults
 

@@ -13,9 +13,23 @@ bash build.sh
 conda activate FlaGs3
 ```
 
-`build.sh` creates the environment, verifies it, and offers the two large
-optional extras (sismis and the Pfam-A database). It is safe to re-run — it
-detects what is already installed and skips it.
+`build.sh` creates the environment, verifies it, then offers each optional tool
+in turn: the Pfam-A database, the DefenseFinder HMM profiles, MMseqs2, geNomad
+and its database, DefenseFinder, PadLoc, and the two licensed tools. It is safe
+to re-run — it detects what is already installed and skips it.
+
+To answer up front instead of being asked:
+
+```bash
+bash build.sh --all                       # everything that needs no licence
+bash build.sh --none                      # environment only
+bash build.sh --with genomad,padloc       # just these
+```
+
+SignalP and DeepTMHMM need a package you obtained yourself, so `--all` reports
+them as needing a path rather than stopping to ask. Give them one with
+`--signalp PACKAGE.tar.gz` or `--deeptmhmm PACKAGE`, or run their installers
+later.
 
 Or install the core dependencies by hand:
 
@@ -132,6 +146,7 @@ is optional. See [All options](#all-options) for the full list and
 | `-ul`, `--use_local DIR` | — | Search a directory of local genomes before going to NCBI. A genome is a `.gff` and `.faa` sharing a basename; `.fna` and RNA FASTAs are picked up if present. Files may be gzipped. Anything not found falls back to NCBI. |
 | `-m`, `--max_assemblies N` | `1` | How many genomes one protein may expand to when it occurs in several. Each genome becomes its own row. Raise to compare strains. Above `1`, row labels in the figures become `protein\|genome` so the rows stay distinguishable. |
 | `-nc`, `--no_cross_db` | off | Keep protein and genome in the same database: RefSeq proteins (`WP_`, `NP_`, `YP_`, ...) resolve only to `GCF_` assemblies, INSDC proteins only to `GCA_`. A protein whose only assemblies sit in the other database is then reported as unresolved rather than annotated against a mirrored genome. Assemblies you supply yourself in the input file are never filtered. |
+| `-rm`, `--remap` | off | Look a protein up again through IPG when the assembly it was paired with in the input produced nothing. Costs extra requests and downloads, so it is opt-in. |
 | `-api`, `--api_key KEY` | — | NCBI API key. Also raises the download rate cap from 5/s to 10/s. |
 | `-tmp`, `--temporary DIR` | `./genomes` | Where downloads are stored. Deleted at the end unless `-k`. |
 | `-k`, `--keep` | off | Keep downloaded genomes instead of deleting them. Useful for reruns — the directory can be fed straight back in via `--use_local`. |
@@ -399,6 +414,30 @@ It is never switched on automatically, whatever the run size. If `mmseqs` is
 missing the run stops rather than quietly clustering everything, since that turns
 an hour into days with nothing in the output to say why.
 
+### When a paired assembly holds nothing
+
+Giving a protein with an assembly means FlaGs3 uses that assembly and never asks
+NCBI where the protein lives. That is what makes a paired input fast. It also
+means that if the assembly has since been withdrawn, fails to download, or simply
+does not contain that accession, the protein is dropped with no second attempt —
+and a verbose run says so:
+
+```
+>> 214 proteins whose paired assembly gave nothing; --remap looks them up again
+   through IPG
+```
+
+`--remap` does exactly that, once, after extraction. Both failure modes look the
+same at that point, so one pass covers a bad assembly and a good assembly missing
+the protein alike. It is off by default because it costs extra NCBI requests and
+possibly extra downloads; turn it on when the assembly column was compiled a
+while ago.
+
+Resolution through IPG goes out in chunks of 200 accessions. A single request for
+thousands comes back slowly, truncated, or not at all, and a truncated report is
+not an error — it looks exactly like those proteins having no assembly. Chunked,
+a failure costs only its own 200 and the count is reported.
+
 ### Two tool tables
 
 `tools_table.tsv` holds the shipped defaults and is what the repository tracks.
@@ -523,6 +562,13 @@ without redoing the analysis.
 `--write_table` drops a starting table into a run directory. Because the main run
 shells out to the same script, a redraw reproduces the run's figures exactly.
 `-nf`/`--no_figures` skips drawing entirely; `-f`/`--figures` points a run at your own table.
+
+A figure taller than `-fh`/`--figure_height` (default 16383 px, the canvas limit
+of Illustrator and librsvg) is written as `<name>_part1.svg`, `<name>_part2.svg`
+and so on, splitting the rows in order. Raise the limit if you only ever open
+figures in a browser, which has no such ceiling. Figures with a tree panel are
+never split, because the tree spans every row; those are left whole with a
+warning.
 
 ## Output files
 

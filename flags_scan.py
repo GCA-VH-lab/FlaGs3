@@ -40,30 +40,6 @@ def merge_windows(spans, margin: int = 0,
 	return out
 
 
-def write_windows(genome_path: str, windows: List[ScanWindow], out_path: str
-				  ) -> Dict[str, Tuple[int, ScanWindow]]:
-	from Bio import SeqIO
-	wanted: Dict[str, List[ScanWindow]] = {}
-	for w in windows:
-		wanted.setdefault(w.contig, []).append(w)
-	offsets: Dict[str, Tuple[int, ScanWindow]] = {}
-	opener = gzip.open if genome_path.endswith(".gz") else open
-	index = 0
-	with opener(genome_path, "rt", encoding="utf-8", errors="replace") as fin, \
-		 open(out_path, "w") as fout:
-		for record in SeqIO.parse(fin, "fasta"):
-			for w in wanted.get(record.id, []):
-				lo = max(1, w.slice_start)
-				hi = min(len(record.seq), w.slice_end)
-				if hi < lo:
-					continue
-				name = "w{}".format(index)
-				index += 1
-				fout.write(">{}\n{}\n".format(name, str(record.seq)[lo - 1:hi]))
-				offsets[name] = (lo - 1, w._replace(slice_start=lo, slice_end=hi))
-	return offsets
-
-
 MAX_BATCH_BASES = 200_000_000   # one tool invocation's worth of sequence
 
 
@@ -89,6 +65,45 @@ def _records(genome_path, windows):
 						record.id, 1, span, 1, span)
 
 
+def describe_window(assembly, window, length, queries=None):
+	"""The record id has to stay a short token, since the tools echo it back and
+	it is what the offset table is keyed on. Everything a reader needs goes in
+	the description after it."""
+	primary = (queries or [None])[0]
+	fields = ["assembly={}".format(assembly),
+			  "contig={}".format(window.contig),
+			  "len={}".format(length),
+			  "genomic={}-{}".format(window.slice_start, window.slice_end),
+			  "analysed={}-{}".format(window.start, window.end)]
+	if queries:
+		fields.insert(2, "query={}".format(",".join(queries)))
+	if primary and primary in (WINDOW_QUERY_POS or {}):
+		q_start, q_end, strand = WINDOW_QUERY_POS[primary]
+		if strand == "-":
+			lo, hi = q_end - window.slice_end, q_end - window.slice_start
+		else:
+			lo, hi = window.slice_start - q_start, window.slice_end - q_start
+		fields += ["start={}".format(lo), "end={}".format(hi),
+				   "query_at={}".format(abs(q_start - window.slice_start) + 1)]
+	return " ".join(fields)
+
+
+WINDOW_QUERY_POS = {}     # query -> (start, end, strand), filled in by the caller
+WINDOW_QUERIES = {}       # (assembly, contig, start, end) -> [query, ...]
+
+
+def _queries_for(assembly, window):
+	direct = WINDOW_QUERIES.get((assembly, window.contig, window.start, window.end))
+	if direct:
+		return direct
+	found = []
+	for (asm, contig, lo, hi), names in WINDOW_QUERIES.items():
+		if asm == assembly and contig == window.contig \
+				and lo >= window.start and hi <= window.end:
+			found.extend(names)
+	return sorted(set(found))
+
+
 def write_batches(jobs, out_dir: str, max_bases: int = MAX_BATCH_BASES):
 	"""jobs: [(assembly, genome_path, windows)]. Yields (fasta_path, offsets),
 	splitting so one file never holds more than max_bases of sequence."""
@@ -106,7 +121,9 @@ def write_batches(jobs, out_dir: str, max_bases: int = MAX_BATCH_BASES):
 				path, batch = open_batch(number)
 			name = "w{}".format(index)
 			index += 1
-			batch.write(">{}\n{}\n".format(name, seq))
+			batch.write(">{} {}\n{}\n".format(
+				name, describe_window(assembly, window, len(seq),
+									  _queries_for(assembly, window)), seq))
 			offsets[name] = (assembly, offset, window)
 			bases += len(seq)
 			if bases >= max_bases:
@@ -138,13 +155,10 @@ def shared_batches(key: str, jobs, out_dir: str,
 		return result
 
 
-def forget_batches():
-	with _STORE_LOCK:
-		_STORE.clear()
-
-
 def place_batched(record_name: str, start: int, end: int, offsets):
 	placed = offsets.get(record_name)
+	if placed is None and record_name:
+		placed = offsets.get(str(record_name).split()[0])
 	if placed is None:
 		return None
 	assembly, offset, window = placed
@@ -152,21 +166,3 @@ def place_batched(record_name: str, start: int, end: int, offsets):
 	coverage = "full" if window.start <= lo and hi <= window.end else "partial"
 	return assembly, window.contig, lo, hi, coverage
 
-
-def batch_bases(offsets):
-	return sum(w.slice_end - w.slice_start + 1 for _, _, w in offsets.values())
-
-
-def place(record_name: str, start: int, end: int,
-		  offsets: Dict[str, Tuple[int, ScanWindow]]):
-	placed = offsets.get(record_name)
-	if placed is None:
-		return None
-	offset, window = placed
-	lo, hi = start + offset, end + offset
-	coverage = "full" if window.start <= lo and hi <= window.end else "partial"
-	return window.contig, lo, hi, coverage
-
-
-def scanned_bases(offsets: Dict[str, Tuple[int, ScanWindow]]) -> int:
-	return sum(w.slice_end - w.slice_start + 1 for _, w in offsets.values())

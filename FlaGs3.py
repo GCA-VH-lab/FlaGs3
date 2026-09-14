@@ -11,7 +11,8 @@ import tempfile
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (ThreadPoolExecutor, as_completed, wait,
+								FIRST_COMPLETED)
 from typing import Dict, List, Optional, Tuple, NamedTuple
 
 import requests
@@ -26,9 +27,6 @@ from flags_log import debug, set_debug
 NCBI_TOOL = "flags3"
 
 
-def feature_defaults():
-	import flags_features
-	return flags_features.TMHMM_CMD, flags_features.SIGNALP_CMD
 DEFAULT_HMMDB = "./pfam_db/Pfam-A.hmm"
 
 
@@ -617,6 +615,7 @@ class NeighborhoodExtractor:
 		self.species: Dict[str, str] = {}          # row id -> organism name
 		self.row_label: Dict[str, str] = {}        # row id -> display label
 		self.ranges: Dict[str, RangeInfo] = {}     # row id -> window actually obtained
+		self.drawn_accessions: Dict[str, set] = {} # row id -> the genes actually drawn
 		self.window_genes: Dict[str, list] = {}    # row id -> every gene in the scan window
 		self.window_sequences: Dict[str, str] = {} # those genes' proteins, by accession
 		self._gff_cache: Dict[str, List[dict]] = {}
@@ -686,6 +685,7 @@ class NeighborhoodExtractor:
 				contig=g["contig"],
 			))
 		if neighborhood:
+			self.drawn_accessions[row_id] = {g.accession for g in neighborhood}
 			self.ranges[row_id] = self._range_info(
 				row_id, query, assembly, genes, idx, contig, qstrand, neighborhood)
 			if self.scan_range:
@@ -961,6 +961,8 @@ class NeighborhoodExtractor:
 
 
 class NeighborhoodClusterer:
+	CHUNK = 100     # queries handed to one jackhmmer call
+
 	def __init__(self, iterations: int = 3, incE: float = 1e-3,
 				 workers: Optional[int] = None):
 		self.iterations = iterations
@@ -977,18 +979,25 @@ class NeighborhoodClusterer:
 				   for name, seq in sequences.items()}
 		block = DigitalSequenceBlock(self.alphabet, list(digital.values()))
 
-		def search_one(item):
-			name, query = item
-			result = list(pyhmmer.hmmer.jackhmmer(
-				[query], block,
+		def search_chunk(chunk):
+			names = [n for n, _ in chunk]
+			results = pyhmmer.hmmer.jackhmmer(
+				[q for _, q in chunk], block,
 				max_iterations=self.iterations,
 				incE=self.incE,
 				cpus=1,
-			))[0]
-			return name, {self._name(h) for h in result.hits if h.included}
+			)
+			return [(name, {self._name(h) for h in r.hits if h.included})
+					for name, r in zip(names, results)]
 
+		items = list(digital.items())
+		size = max(1, min(self.CHUNK,
+						  -(-len(items) // max(self.workers or 1, 1))))
+		chunks = [items[i:i + size] for i in range(0, len(items), size)]
+		adjacency = {}
 		with ThreadPoolExecutor(max_workers=self.workers) as pool:
-			adjacency = dict(pool.map(search_one, sorted(digital.items())))
+			for part in pool.map(search_chunk, chunks):
+				adjacency.update(part)
 
 		self.adjacency = adjacency
 		return self._connected_components(adjacency)
@@ -1019,7 +1028,7 @@ class NeighborhoodClusterer:
 				seen.add(x)
 				stack.extend(symmetric.get(x, set()) - component)
 			families.append(sorted(component))
-		families.sort(key=lambda f: (-len(f), f[0]))
+		families.sort(key=len, reverse=True)
 		return families
 
 
@@ -1260,7 +1269,10 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	prot_n, rna_n, query_n = 0, 0, 0
 	shared = [fam for fam in families if family_shared(fam, occurrences)]
 	if occurrences:
-		shared.sort(key=lambda fam: -sum(occurrences.get(a, 0) for a in fam))
+		# the first member breaks ties, so two families with the same number of
+		# occurrences always number the same way round
+		shared.sort(key=lambda fam: (-sum(occurrences.get(a, 0) for a in fam),
+									 fam[0]))
 	for fam in shared:
 		if fam[0] in rna_accessions:
 			rna_n += 1
@@ -1276,7 +1288,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1517,16 +1529,30 @@ def flags_tools_span(args, tool):
 
 def scan_windows(args, extractor, mod, tool):
 	import flags_tools
+	import flags_scan
 	span = flags_tools.scan_range(tool, args.scan_range)
 	if not span:
 		return {}
 	spans = {}
 	for row_id, info in extractor.ranges.items():
 		assembly = row_id.rsplit("|", 1)[-1]
-		spans.setdefault(assembly, []).append(
-			(info.contig, max(1, info.q_start - span), info.q_end + span))
-	return {assembly: mod.merge_windows(entries, args.scan_margin,
-										extractor.contig_lengths(assembly))
+		query = row_id.rsplit("|", 1)[0]
+		# use the span the range report recorded, which is already clipped to
+		# the contig; recomputing it here claimed an analysed range running
+		# past the end of a short contig
+		if info.scan_start and info.scan_end:
+			lo, hi = info.scan_start, info.scan_end
+		else:
+			lo = max(1, info.q_start - span)
+			hi = min(info.q_end + span, info.contig_length or info.q_end + span)
+		spans.setdefault(assembly, []).append((info.contig, lo, hi))
+		# so each cut window can name the queries it was cut for
+		flags_scan.WINDOW_QUERIES.setdefault(
+			(assembly, info.contig, lo, hi), []).append(query)
+		flags_scan.WINDOW_QUERY_POS[query] = (info.q_start, info.q_end,
+											  info.q_strand)
+	return {assembly: flags_scan.merge_windows(
+			entries, args.scan_margin, extractor.contig_lengths(assembly))
 			for assembly, entries in spans.items()}
 
 
@@ -1923,6 +1949,61 @@ def scan_domains(args, extractor, families, all_neighborhoods, out_path,
 	return domains, clan_map, domain_table_written
 
 
+def write_window_tables(extractor, out_path):
+	"""Every gene inside the scan window, not only the drawn neighbourhood. The
+	scanning tools work on the whole window, so a defence system can name genes
+	that appear nowhere else in the output; without this the hit says which
+	accessions it spans and nothing can say what they are."""
+	with open(out_path("_window.tsv"), "w") as out:
+		out.write("#query\tassembly\tcontig\taccession\tstart\tend\tstrand\t"
+				  "offset\tin_neighbourhood\tproduct\n")
+		for row in sorted(extractor.window_genes):
+			info = extractor.ranges.get(row)
+			assembly = row.rsplit("|", 1)[-1]
+			inside = extractor.drawn_accessions.get(row, set())
+			for g in sorted(extractor.window_genes[row], key=lambda g: g.start):
+				out.write("\t".join(str(v) for v in (
+					row.rsplit("|", 1)[0], assembly, g.contig, g.accession,
+					g.start, g.end, g.strand, g.offset,
+					"yes" if g.accession in inside else "no",
+					g.product or "")) + "\n")
+	with open(out_path("_window.fasta"), "w") as out:
+		for row in sorted(extractor.window_genes):
+			info = extractor.ranges.get(row)
+			query = row.rsplit("|", 1)[0]
+			assembly = row.rsplit("|", 1)[-1]
+			inside = extractor.drawn_accessions.get(row, set())
+			for g in sorted(extractor.window_genes[row], key=lambda g: g.start):
+				seq = extractor.window_sequences.get(g.accession)
+				if not seq:
+					continue
+				lo, hi = relative_span(g, info)
+				out.write(">{} {}\n{}\n".format(
+					g.accession,
+					window_header(query, assembly, g, len(seq), lo, hi,
+								  g.accession in inside),
+					seq))
+
+
+def relative_span(gene, info):
+	"""Where the gene sits relative to the query gene, in query orientation:
+	negative upstream, positive downstream, so it reads the same way as offset
+	and as the up/down columns of the range report."""
+	if info is None:
+		return gene.start, gene.end
+	if info.q_strand == "-":
+		return info.q_end - gene.end, info.q_end - gene.start
+	return gene.start - info.q_start, gene.end - info.q_start
+
+
+def window_header(query, assembly, gene, length, lo, hi, drawn):
+	return ("query={} assembly={} contig={} len={} start={} end={} strand={} "
+			"offset={} in_neighbourhood={} product={}").format(
+				query, assembly, gene.contig, length, lo, hi, gene.strand,
+				gene.offset, "yes" if drawn else "no",
+				gene.product or "hypothetical protein")
+
+
 def print_summary(args, prefix, extractor, families, rna_families, figures_written,
 				  tree_written, want_tree, domain_table_written, features, sismis_mod,
 				  blast_hits, collapse_written=False, genomad_written=False,
@@ -1956,6 +2037,8 @@ def print_summary(args, prefix, extractor, families, rna_families, figures_writt
 		print("  {}{}".format(prefix, suffix))
 	if extractor.ranges:
 		print("  {}_rangeReport.tsv".format(prefix))
+	if extractor.window_genes:
+		print("  {}_window.tsv / {}_window.fasta".format(prefix, prefix))
 	if collapse_written:
 		print("  {}_collapse.tsv".format(prefix))
 	if flags_log.transcript_path():
@@ -2485,6 +2568,8 @@ def main():
 							row_sequences=extractor.row_sequences,
 							ranges=extractor.ranges, requested=args.range)
 	n_issues = reporter.write_all(out_path)
+	if extractor.window_genes:
+		write_window_tables(extractor, out_path)
 	if collapse_result:
 		collapse_mod.write_report(collapse_result, out_path("_collapse.tsv"),
 								  reporter.fam_of)

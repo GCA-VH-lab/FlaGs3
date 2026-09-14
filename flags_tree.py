@@ -103,11 +103,24 @@ class TreeBuilder:
           self.commands.append(" ".join(cmd))
           self.alignment = self._read_alignment(trimmed)
         else:
-          print("Warning: trimal not found on PATH; using the untrimmed "
-                "alignment.")
-          self.alignment = raw
+          # _trim is the same column filter as trimal -gt, so it stands in for
+          # the default mode without the binary. The heuristic modes have no
+          # equivalent here, so those fall back to the untrimmed alignment.
+          mode = (self.trimal_mode or "gt").lstrip("-")
+          if mode == "gt":
+            try:
+              threshold = float(self.trimal_value)
+            except (TypeError, ValueError):
+              threshold = 0.1
+            self.alignment = self._trim(raw, threshold) or raw
+            print("Warning: trimal not found on PATH; trimming columns at "
+                  "gt {} internally instead.".format(threshold))
+          else:
+            print("Warning: trimal not found on PATH and -{} has no internal "
+                  "equivalent; using the untrimmed alignment.".format(mode))
+            self.alignment = raw
           with open(trimmed, "w") as out:
-            for name, seq in raw.items():
+            for name, seq in self.alignment.items():
               out.write(">{}\n{}\n".format(name, seq))
         if raw and self.alignment:
           self._debug("alignment {} cols -> {} after trimal".format(
@@ -154,14 +167,14 @@ class TreeBuilder:
   def _read_alignment(path: str) -> Dict[str, str]:
     return {rec.id: str(rec.seq) for rec in SeqIO.parse(path, "fasta")}
 
-  def _trim(cls, alignment: Dict[str, str], gap_threshold: float) -> Dict[str, str]:
+  def _trim(self, alignment: Dict[str, str], gap_threshold: float) -> Dict[str, str]:
     rows = list(alignment.values())
     if not rows:
       return alignment
     width = len(rows[0])
     need = gap_threshold * len(rows)
     keep = [i for i in range(width)
-            if sum(1 for r in rows if r[i] not in cls.GAP_CHARS) >= need]
+            if sum(1 for r in rows if r[i] not in self.GAP_CHARS) >= need]
     if not keep or len(keep) == width:
       return alignment
     return {name: "".join(seq[i] for i in keep) for name, seq in alignment.items()}

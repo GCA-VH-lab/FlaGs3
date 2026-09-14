@@ -150,15 +150,6 @@ def read_table(path: str) -> List[FigureSpec]:
 	return specs
 
 
-def default_specs() -> List[FigureSpec]:
-	path = default_table_path()
-	if not os.path.isfile(path):
-		raise FileNotFoundError(
-			"no {} next to flags_redraw.py. It defines the standard figures; "
-			"restore it or pass --format.".format(TABLE_NAME))
-	return read_table(path)
-
-
 def write_default_table(path: str):
 	with open(path, "w") as out:
 		out.write(read_default_table())

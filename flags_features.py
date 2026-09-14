@@ -82,23 +82,6 @@ def parse_deeptmhmm_3line(text: str, want_signal: bool = True) -> Dict[str, List
 	return features
 
 
-def parse_signalp_regions(text: str) -> Dict[str, List[FeatureRegion]]:
-	features: Dict[str, List[FeatureRegion]] = {}
-	lines = [ln.rstrip("\n") for ln in text.splitlines() if ln.strip()]
-	i = 0
-	while i < len(lines):
-		if not lines[i].startswith(">"):
-			i += 1
-			continue
-		name = lines[i][1:].split("|")[0].split()[0].strip()
-		labels = lines[i + 2] if i + 2 < len(lines) else ""
-		regions = _runs(labels, "STLP", "signal")
-		if regions:
-			features[name] = [regions[0]]
-		i += 3
-	return features
-
-
 class _LocalScanner:
 
 	def __init__(self, tool: str, needs=None):

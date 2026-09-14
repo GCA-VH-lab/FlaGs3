@@ -622,6 +622,8 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_sismis_diagnostics.txt` | per-genome Sismis status, how many windows were scanned, and how much of the genome that came to (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
 | `results_collapse.tsv` | each MMseqs2 representative, its family, and its members, so a propagated family assignment can be traced back (`--cluster_collapse`) |
+| `results_window.tsv` | every gene inside the scan window: coordinates, strand, product, and whether it was in the drawn neighbourhood (`-sr`) |
+| `results_window.fasta` | those genes' proteins, each header carrying the query, assembly, contig, length, and position relative to the query gene (`-sr`) |
 | `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |
 | `results_console.log` | everything the run printed, plus the output of external tools that never reached the terminal |
 | `results_input.txt` | a copy of the input list, so the results stay self-contained |

@@ -207,7 +207,28 @@ derived its numbering from the same sort.
 `RnaClusterer` mirrors this with nhmmer for RNA genes, falling back to grouping
 by normalised product name when no nucleotide sequence is available.
 
-### Components are taken on a symmetrised graph
+### Clustering memory scales with homology, not with size
+
+A subfamily drawn from few genera has flanking proteins that nearly all hit each
+other, so the adjacency approaches a complete graph: 8397 sequences at 90%
+density is 63 million edges. Two things then made that far more expensive than it
+had to be.
+
+`_name` decoded `hit.name` for every hit, so each edge held its own string object
+rather than a pointer to the one canonical name. Measured at that scale, 7.9 GB
+instead of 4.4. `search_one` now maps the hit's raw bytes back to the key string
+the block was built from.
+
+`_connected_components` built a symmetrised copy holding every edge in both
+directions, while the original adjacency was still live -- about 4 GB more at the
+same scale. Union-find gives the same components from one parent entry per node,
+which measured 3800x smaller on a dense graph and produced identical families.
+
+Together these took a dense 8397-sequence run from roughly 17 GB to roughly 4 GB.
+The symptom was the OOM killer on a subfamily spanning 11 genera, while a
+subfamily six times larger but spanning 503 genera had run comfortably.
+
+### Components join whichever direction the hit came from
 
 jackhmmer adjacency is genuinely one-directional in a few percent of pairs: A's
 profile finds B while B's does not find A, which is normal when one of them sits
@@ -266,11 +287,17 @@ prints the estimate so the choice is informed.
 `TreeBuilder` runs three stages: MAFFT `--auto`, a gap-threshold column trim, then
 an inference engine. The trim keeps columns where at least `gap_threshold` of the
 sequences carry a residue — the same rule as `trimal -gt`, which is what ete3's
-`trimal01` ran in the old pipeline. It is implemented in `_trim` rather than
-shelled out because `-gt` is a deterministic column filter and adding a binary
-dependency for ten lines is not worth it; the heuristic modes (`-automated1`,
-`-gappyout`) would need the real trimal. If trimming would empty the alignment,
-the untrimmed one is used instead.
+`trimal01` ran in the old pipeline. It shells out to trimal when that is on
+PATH, since the heuristic modes (`-automated1`, `-gappyout`) have no short
+equivalent. When it is not, `_trim` stands in for the default `-gt`, which is a
+deterministic column filter worth ten lines rather than a hard dependency; the
+heuristic modes fall back to the untrimmed alignment and say so. If trimming
+would empty the alignment, the untrimmed one is used instead.
+
+`_trim` was described here as the implementation while nothing called it, and it
+would have raised `NameError` if anything had: its first parameter was named
+`cls` with no `@classmethod` decorator, and the body referenced `cls.GAP_CHARS`.
+Wiring it exposed both.
 
 The engine is `veryfasttree` by default and `iqtree` under `--iqtree`
 (ModelFinder, plus 1000 ultrafast bootstrap replicates when there are at least
@@ -611,6 +638,47 @@ The point is that an installed path is a property of a machine, not of the
 project. Writing them into the tracked table meant every install produced a diff
 full of somebody's home directory, and those diffs got committed.
 
+### One jackhmmer call carries many queries
+
+Each `jackhmmer` call leaves roughly 2 MB behind whatever is done with the
+result. At one call per query that is invisible on a small run and fatal on a
+large one: a subfamily of 8397 flanking proteins makes 8397 calls, which is about
+19 GB, and the OOM killer took three attempts at it.
+
+Queries now go in chunks of `CHUNK`, so the same subfamily makes 84 calls rather
+than 8397. Measured on a dense block: 2.28 MB per call one at a time against
+0.16 MB per query batched, with the wall time unchanged. The thread pool is
+untouched, since that is where the parallel speedup comes from and it was never
+the problem.
+
+Chunk size is capped so that every worker still gets work: with 26 threads and
+300 queries the chunks are 12 rather than 100.
+
+### The window's genes are output too
+
+The scanning tools work on the whole scan window while only the `-g` neighbourhood
+is clustered and drawn, so a defence system can name genes that appear nowhere
+else in the output. On a test run 91 of 91 genes named as system members were
+absent from every other file: the hit said which accessions it spanned and
+nothing said what they were.
+
+`_window.tsv` lists every gene inside the window -- coordinates, strand, offset,
+product, and whether it was in the drawn neighbourhood -- and `_window.fasta`
+carries their proteins. Both come from `window_genes` and `window_sequences`,
+which extraction already built, so writing them costs a pass over data already in
+memory.
+
+`_window.fasta` headers carry the same facts as key=value pairs -- query,
+assembly, contig, protein length, position and strand -- so the file describes
+itself without the table beside it. Position is relative to the query gene in
+query orientation, negative upstream, matching `offset` and the range report's
+up and down columns rather than genomic left and right. A protein sitting in two
+windows gets one record per window, since its position differs in each.
+
+`in_neighbourhood` is the column that matters when reading a figure beside the
+tables: a `no` gene is real and was scanned, it simply fell outside what was
+drawn.
+
 ### A paired assembly is not the last word
 
 A protein given with an assembly in the input skipped IPG entirely, so a
@@ -703,6 +771,35 @@ Windowing still matters -- it cuts what the tool reads and it is what makes a
 batch file a sensible size -- but on its own it was never going to be enough.
 
 Sismis gets the same treatment for the same reason.
+
+### No second way to scan
+
+When Sismis and geNomad moved to one invocation over many genomes,
+`SismisScanner.scan_windows` and `scan_assembly` -- the per-assembly path they
+replaced -- stayed in the file, along with `write_windows`, `place`,
+`scanned_bases` and `_decompressed`, which nothing else called. Two ways to do
+the same thing, one of them unreachable and none of it exercised.
+
+They are gone. A reachability pass over the whole tree now finds no unreferenced
+definition that was not already in 1.4.0.
+
+### The cut windows describe themselves
+
+The records in `windows/<span>/batch*.fna` are what Sismis and geNomad actually
+read, and they were named `w0`, `w1` and nothing else. The id has to stay a short
+token, because the tools echo it back and the offset table is keyed on it, so
+everything a reader needs goes in the description after it: the assembly, the
+contig, the query the window was cut for, the length, the genomic slice, the
+analysed span without the margin, and the position relative to the query gene.
+
+`place_batched` falls back to the first whitespace-separated token, so a tool that
+reports the whole header rather than the id still resolves.
+
+`scan_windows` used to recompute the span rather than taking the one the range
+report recorded. The report clips to the contig; the recomputation did not, so at
+a short contig a window claimed an analysed range running past the end of the
+sequence, and a hit near that end was called `full` when the report said the range
+had been truncated. It now uses the recorded span.
 
 ### One copy of the windows
 

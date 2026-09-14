@@ -84,6 +84,10 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 
 ## Version history
 
+**2.2.0** — the scan window's genes and proteins are written out and its FASTA
+headers say what they are, clustering no longer exhausts memory on a dense
+subfamily, and every unreferenced function and import is gone
+
 **2.1.0** — `--remap` looks a protein up again through IPG when its paired
 assembly gives nothing, IPG resolution runs in chunks rather than one request,
 and figures too tall for an editor are written as parts

@@ -1,10 +1,7 @@
-import gzip
 import os
-import shutil
 import subprocess
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-from flags_scan import ScanWindow, merge_windows, place, scanned_bases, write_windows
 
 
 class SecretionHit(NamedTuple):
@@ -71,46 +68,6 @@ class SismisScanner:
 		self.batches = batch
 		return hits
 
-	def scan_windows(self, assembly: str, genome_path: str,
-					 windows: List[ScanWindow]) -> List[SecretionHit]:
-		if assembly in self._cache:
-			return self._cache[assembly]
-		if not windows:
-			return []
-		asm_dir = os.path.join(self.out_dir, assembly)
-		os.makedirs(asm_dir, exist_ok=True)
-		fasta = os.path.join(asm_dir, "windows.fna")
-		offsets = write_windows(genome_path, windows, fasta)
-		if not offsets:
-			raise RuntimeError(
-				"none of the {} scan window(s) matched a contig in {}".format(
-					len(windows), os.path.basename(genome_path)))
-		self.scanned_bases[assembly] = scanned_bases(offsets)
-		self.window_count[assembly] = len(offsets)
-		hits = self._run(assembly, fasta, asm_dir)
-		mapped = []
-		for hit in hits:
-			placed = place(hit.contig, hit.start, hit.end, offsets)
-			if placed is None:
-				continue
-			contig, start, end, coverage = placed
-			mapped.append(hit._replace(contig=contig, start=start, end=end,
-									   coverage=coverage))
-		self._cache[assembly] = mapped
-		return mapped
-
-	def scan_assembly(self, assembly: str, genome_path: str) -> List[SecretionHit]:
-		if assembly in self._cache:
-			return self._cache[assembly]
-
-		asm_dir = os.path.join(self.out_dir, assembly)
-		os.makedirs(asm_dir, exist_ok=True)
-		fasta = self._decompressed(genome_path, asm_dir)
-
-		hits = self._run(assembly, fasta, asm_dir)
-		self._cache[assembly] = hits
-		return hits
-
 	def _run(self, assembly: str, fasta: str, asm_dir: str) -> List[SecretionHit]:
 		sismis_out = os.path.join(asm_dir, "sismis")
 		import flags_tools
@@ -130,16 +87,6 @@ class SismisScanner:
 				proc.returncode, assembly,
 				flags_tools.brief(proc.stderr or proc.stdout)))
 		return self._parse_clusters(sismis_out, assembly)
-
-	@staticmethod
-	def _decompressed(genome_path: str, asm_dir: str) -> str:
-		if not genome_path.endswith(".gz"):
-			return genome_path
-		local = os.path.join(asm_dir, "genome.fna")
-		with gzip.open(genome_path, "rt", encoding="utf-8", errors="replace") as fin, \
-			 open(local, "w") as fout:
-			shutil.copyfileobj(fin, fout)
-		return local
 
 	def _parse_clusters(self, sismis_out: str, assembly: str) -> List[SecretionHit]:
 		clusters_tsv = self._find_clusters_tsv(sismis_out)

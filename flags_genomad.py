@@ -1,11 +1,8 @@
 import csv
-import gzip
 import os
-import shutil
 import subprocess
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-from flags_scan import ScanWindow, merge_windows, place, scanned_bases, write_windows
 
 
 class MgeHit(NamedTuple):

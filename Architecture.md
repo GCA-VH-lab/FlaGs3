@@ -836,6 +836,30 @@ On real data this is 101 genes against 11. Systems found outside the drawn
 neighbourhood appear in `_defence.tsv` and are clipped from the figure, which is
 the right way round -- the table is the result, the figure is a view of part of it.
 
+### What the figure shows, and what the table decides
+
+Family numbers are drawn on a gene even when the gene is narrower than the
+number. Knowing which family a small gene belongs to is worth more than the
+overlap, since the alternative is a gene with no identity at all. `--no_overlaps`
+restores the old behaviour of leaving the number out.
+
+Numbers are black on every gene except the query, which keeps the contrast rule
+because its fill is chosen for emphasis rather than for legibility. White text on
+a dark family colour was legible in isolation and inconsistent across a row.
+
+Every gene outline is one weight. The query, RNA and pseudogenes were drawn at 2
+and everything else at 1, which read as a difference in importance that was not
+intended -- the accent colour already carries that.
+
+Rows are anchored on the query's left end rather than its midpoint, so the
+queries line up with each other whatever their length. On a reversed row the
+anchor is the query's end, which is its left edge once the row is flipped.
+
+`requires` in `visualisation_table.tsv` names the data a figure needs. A figure
+whose data is absent is not drawn, so a run without `--sismis` no longer produces
+an empty secretion figure. An empty column means always draw, so a table written
+before this column behaves as it did.
+
 ### Overlapping bands need lanes
 
 Every band on a row was drawn at the same `y` with the same height. Two tools

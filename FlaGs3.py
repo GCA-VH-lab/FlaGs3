@@ -1156,7 +1156,8 @@ class ReportWriter:
 	def outdesc_txt(self, path):
 		blocks = [fam for fam in self.families
 				  if family_shared(fam, self.occurrences)]
-		blocks.sort(key=lambda fam: -sum(self.occurrences.get(a, 0) for a in fam))
+		blocks.sort(key=lambda fam: (-sum(self.occurrences.get(a, 0) for a in fam),
+									 fam[0]))
 		with open(path, "w") as out:
 			for fam in blocks:
 				label = self.fam_of.get(fam[0], "-")
@@ -1278,8 +1279,6 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	prot_n, rna_n, query_n = 0, 0, 0
 	shared = [fam for fam in families if family_shared(fam, occurrences)]
 	if occurrences:
-		# the first member breaks ties, so two families with the same number of
-		# occurrences always number the same way round
 		shared.sort(key=lambda fam: (-sum(occurrences.get(a, 0) for a in fam),
 									 fam[0]))
 	for fam in shared:
@@ -1297,7 +1296,7 @@ def family_numbers(families, rna_accessions=None, query_accessions=None,
 	return number
 
 
-VERSION = "2.2.0"
+VERSION = "2.2.2"
 
 DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
 
@@ -1490,6 +1489,7 @@ def build_parser():
 	parser.add_argument("-pdf", "--pdf", action="store_true", help=" Also write a PDF beside every figure. Needs one of cairosvg, svglib, rsvg-convert or inkscape; without one the figures are still written as SVG. ")
 	parser.add_argument("-nf", "--no_figures", action="store_true", help=" Run the analysis and write the tables, but draw nothing. Figures can be produced later with flags_redraw.py. ")
 	parser.add_argument("-fh", "--figure_height", type=int, default=16383, metavar="PX", help=" Split a figure into parts when it would be taller than this, writing <name>_part1.svg and so on. The default is the canvas limit of Illustrator and librsvg, past which a figure opens in a browser but nowhere else. Raise it if you only ever view figures in a browser. Figures carrying a tree panel are never split, since the tree spans every row. ")
+	parser.add_argument("-no", "--no_overlaps", action="store_true", help=" Leave a family number out of a gene too small to hold it. By default the number is drawn anyway, since knowing which family a small gene belongs to usually matters more than the overlap. ")
 	parser.add_argument("-f", "--figures", metavar="TSV", help=" Figure table controlling which figures are drawn and every parameter of how. Default: visualisation_table.tsv, written into the output directory for you to edit and re-apply with flags_redraw.py. ")
 	parser.add_argument("-cl", "--clans", help=" Pfam-A.clans.tsv(.gz): colour domains by clan instead of family. ")
 	parser.add_argument("-ip", "--interpro", default=DEFAULT_INTERPRO, help=" InterPro metadata table (.tsv or .tsv.gz) with 'accession' and 'pfam_members' columns. Adds the InterPro entry, its name and type, and short characterisation/informativeness summaries to _domains.tsv, joined on the Pfam accession. Looked for in the working directory and next to FlaGs3.py; if it is not there the domain table is written without those columns. Default = " + DEFAULT_INTERPRO + " ")
@@ -2598,6 +2598,8 @@ def main():
 							  "flags_redraw.py")
 		cmd = [sys.executable, redraw, "--data", args.output, "--prefix", prefix,
 			   "--max_height", str(args.figure_height)]
+		if args.no_overlaps:
+			cmd.append("--no_overlaps")
 		if args.figures:
 			cmd += ["--format", args.figures]
 		if args.pdf:

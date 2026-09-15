@@ -9,7 +9,8 @@ from typing import Dict, List, NamedTuple, Optional, Set
 
 TABLE_NAME = "visualisation_table.tsv"
 
-COLUMNS = ("name", "mode", "tree_width", "features_allowed", "family_numbers",
+COLUMNS = ("name", "mode", "tree_width", "features_allowed", "requires",
+		   "family_numbers",
 		   "font_size", "row_height", "gene_height", "gene_gap",
 		   "bases_per_pixel", "pad", "domain_height", "label_step",
 		   "arrow_head", "min_gene_width", "band_opacity")
@@ -48,6 +49,7 @@ class FigureSpec(NamedTuple):
 	tree_width: Optional[float] = None      # None = no tree panel
 	features: Set[str] = frozenset()
 	family_numbers: bool = True
+	requires: Set[str] = frozenset()
 	geometry: Dict[str, float] = {}         # every numeric knob, absent = default
 
 	@property
@@ -102,6 +104,16 @@ def parse_row(row: Dict[str, str]) -> FigureSpec:
 				name, token, ", ".join(FEATURES)))
 		features.add(token)
 
+	requires = set()
+	for token in re.split(r"[,;\s]+", (row.get("requires") or "").strip()):
+		token = token.strip().lower()
+		if not token or token == "none":
+			continue
+		if token not in FEATURES and token != "tree":
+			raise ValueError("figure {!r}: unknown requirement {!r}; allowed: {}".format(
+				name, token, ", ".join(tuple(FEATURES) + ("tree",))))
+		requires.add(token)
+
 	tree_width = _as_number(row.get("tree_width", ""), float, "tree_width", name)
 	if tree_width is False:
 		tree_width = None          # False = no tree panel
@@ -126,7 +138,7 @@ def parse_row(row: Dict[str, str]) -> FigureSpec:
 	return FigureSpec(
 		name=name, mode=mode, tree_width=tree_width, features=frozenset(features),
 		family_numbers=_as_bool(row.get("family_numbers", "TRUE")),
-		geometry=geometry)
+		requires=frozenset(requires), geometry=geometry)
 
 
 def read_table(path: str) -> List[FigureSpec]:
@@ -322,7 +334,23 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 				   genomad=genomad, defence=defence)
 
 
-def render_figure(spec: FigureSpec, data: RunData) -> str:
+def has_data(spec: FigureSpec, data: RunData) -> bool:
+	if not spec.requires:
+		return True
+	present = {"sismis": bool(data.secretion),
+			   "genomad": bool(data.genomad),
+			   "defence": bool(data.defence),
+			   "domains": bool(data.domains),
+			   "tmhmm": any(k == "tmhmm" for v in data.features.values()
+							for k in (f.kind for f in v)) if data.features else False,
+			   "signalp": any(k == "signalp" for v in data.features.values()
+							  for k in (f.kind for f in v)) if data.features else False,
+			   "cluster_rna": any(g.is_rna for g in data.genes),
+			   "tree": bool(data.newick)}
+	return any(present.get(token, True) for token in spec.requires)
+
+
+def render_figure(spec: FigureSpec, data: RunData, no_overlaps: bool = False) -> str:
 	"""Draw one figure from a spec. Returns SVG text, or '' if nothing applies."""
 	from flags_view import OperonView, NeighborhoodVisualizer
 
@@ -372,7 +400,7 @@ def render_figure(spec: FigureSpec, data: RunData) -> str:
 		domain_h=int(pick("domain_height", 6)),
 		bp_per_px=pick("bases_per_pixel", 10.4) or 10.4,
 		features=spec.features, monochrome=spec.monochrome,
-		show_numbers=spec.family_numbers)
+		show_numbers=spec.family_numbers, no_overlaps=no_overlaps)
 	view.LABEL_STEP = int(pick("label_step", OperonView.LABEL_STEP))
 	view.SECRETION_BAND_OPACITY = pick("band_opacity",
 									   OperonView.SECRETION_BAND_OPACITY)
@@ -460,12 +488,18 @@ def _splittable(spec: FigureSpec, data: RunData) -> bool:
 
 
 def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
-			   pdf=False, max_height: int = EDITOR_LIMIT):
+			   pdf=False, max_height: int = EDITOR_LIMIT,
+			   no_overlaps: bool = False):
 	"""Render every spec. Returns the list of figure names actually written."""
 	written = []
 	for spec in specs:
+		if not has_data(spec, data):
+			if verbose:
+				print(">> figure {!r} skipped: {} produced nothing in this run"
+					  .format(spec.name, " or ".join(sorted(spec.requires))))
+			continue
 		try:
-			svg = render_figure(spec, data)
+			svg = render_figure(spec, data, no_overlaps)
 		except Exception as e:
 			print("Warning: could not draw figure {!r} ({}).".format(spec.name, e))
 			continue
@@ -486,7 +520,7 @@ def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
 			names = []
 			for n, part in enumerate(parts, 1):
 				try:
-					piece = render_figure(spec, _rows_subset(data, part))
+					piece = render_figure(spec, _rows_subset(data, part), no_overlaps)
 				except Exception as e:
 					print("Warning: could not draw part {} of figure {!r} "
 						  "({}).".format(n, spec.name, e))
@@ -539,6 +573,9 @@ def main():
     parser.add_argument("--prefix",
                         help="File prefix inside --data. Default: the "
                              "directory's own name, which is what FlaGs3 uses.")
+    parser.add_argument("--no_overlaps", action="store_true",
+                        help="Leave a family number out when it will not fit "
+                             "inside its gene. By default it is drawn anyway.")
     parser.add_argument("--max_height", type=int, default=EDITOR_LIMIT,
                         metavar="PX",
                         help="Split a figure into parts when it would be taller "
@@ -595,6 +632,7 @@ def main():
 
     written = render_all(specs, data, out_path, verbose=args.verbose,
                          max_height=args.max_height,
+                         no_overlaps=args.no_overlaps,
                          pdf=args.pdf)
     if not written:
         sys.exit("Error: nothing was drawn. Check the figure table and that "

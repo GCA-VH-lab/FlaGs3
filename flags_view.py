@@ -168,6 +168,7 @@ class _FlaGsBase:
 		return fill, (self._accent(gene) or outline)
 
 	QUERY_ACCENT = "#000000"
+	no_overlaps = False
 	PASTEL_FILL = 0.62
 
 	def _is_pale(self, fill):
@@ -191,9 +192,7 @@ class _FlaGsBase:
 		return "#{:02x}{:02x}{:02x}".format(mix(r), mix(g), mix(b))
 
 	def _stroke_width(self, gene):
-		if self._special_type(gene.accession) in ("rna", "pseudo") or gene.is_rna:
-			return 2
-		return 2 if gene.offset == 0 else 1
+		return 2
 
 	def _accent(self, gene):
 		"""Outer ring colour for a gene that is more than just its family."""
@@ -221,7 +220,8 @@ class OperonView(_FlaGsBase):
 	def __init__(self, mode: str = "families", row_h: int = 26, gene_h: int = 8,
 				 bp_per_px: float = 10.4, pad: int = 16, font: int = 13,
 				 domain_h: int = 6, features=frozenset(), monochrome: bool = False,
-				 show_numbers: bool = True, style: str = "versatile"):
+				 show_numbers: bool = True, style: str = "versatile",
+				 no_overlaps: bool = False):
 		self.style = style
 		if style == "classic":
 			row_h = self.CLASSIC["row_h"] if row_h == 26 else row_h
@@ -237,6 +237,7 @@ class OperonView(_FlaGsBase):
 		self.features = frozenset(features)
 		self.monochrome = monochrome
 		self.show_numbers = show_numbers
+		self.no_overlaps = no_overlaps
 		self.tree_w = 0          # set per figure; 0 means no tree gutter
 		self.newick = ""
 
@@ -247,7 +248,7 @@ class OperonView(_FlaGsBase):
 		for q in rows:
 			genes = by_query[q]
 			qg = next((g for g in genes if g.offset == 0), genes[len(genes) // 2])
-			spans[q] = (qg.start + qg.end) / 2
+			spans[q] = qg.end if self._row_reversed(by_query[q]) else qg.start
 			reversed_row = self._row_reversed(genes)
 			row_reversed[q] = reversed_row
 			if reversed_row:
@@ -386,7 +387,8 @@ class OperonView(_FlaGsBase):
 				num = "G{}".format(num)
 			if num is not None:
 				if self.classic:
-					svg.append(self._number_in_gene(gx0, gx1, y, num, fill))
+					svg.append(self._number_in_gene(gx0, gx1, y, num, fill,
+													g.offset == 0))
 				else:
 					row_labels.append(((gx0 + gx1) / 2, num, "#000"))
 
@@ -700,16 +702,16 @@ class OperonView(_FlaGsBase):
 				out.append('<polygon points="{}" fill="#000"/>'.format(points))
 		return "".join(out)
 
-	def _number_in_gene(self, x0, x1, cy, num, fill):
-		"""Family number centred inside the arrow, as the original FlaGs3 drew it."""
+	def _number_in_gene(self, x0, x1, cy, num, fill, is_query=False):
 		width = max(x1 - x0, self.CLASSIC["min_w"])
 		size = min(self.font - 1, self.gene_h - 4)
-		if self._text_width(str(num), size) > width - 2:
+		if self.no_overlaps and self._text_width(str(num), size) > width - 2:
 			return ""
+		colour = self._readable_on(fill) if is_query else "#000"
 		return ('<text x="{:.1f}" y="{:.1f}" font-size="{}" fill="{}" '
 				'text-anchor="middle">{}</text>').format(
 					(x0 + x1) / 2, cy + size / 3, size,
-					self._readable_on(fill), self._escape(str(num)))
+					colour, self._escape(str(num)))
 
 	@staticmethod
 	def _readable_on(fill: str) -> str:

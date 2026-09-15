@@ -561,6 +561,14 @@ without redoing the analysis.
 `--format` takes a table from anywhere, `-o/--output` writes elsewhere, and
 `--write_table` drops a starting table into a run directory. Because the main run
 shells out to the same script, a redraw reproduces the run's figures exactly.
+`-no`/`--no_overlaps` leaves a family number out of a gene too small to hold it;
+by default it is drawn anyway, since knowing which family a small gene belongs to
+usually matters more than the overlap.
+
+A figure is skipped entirely when the data it needs is absent, which the
+`requires` column of `visualisation_table.tsv` names: a run without `--sismis`
+no longer writes an empty secretion figure. An empty column means always draw.
+
 `-nf`/`--no_figures` skips drawing entirely; `-f`/`--figures` points a run at your own table.
 
 A figure taller than `-fh`/`--figure_height` (default 16383 px, the canvas limit

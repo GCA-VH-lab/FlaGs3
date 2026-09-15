@@ -651,8 +651,17 @@ than 8397. Measured on a dense block: 2.28 MB per call one at a time against
 untouched, since that is where the parallel speedup comes from and it was never
 the problem.
 
-Chunk size is capped so that every worker still gets work: with 26 threads and
-300 queries the chunks are 12 rather than 100.
+Chunk size is set so the pool has several chunks per worker rather than one
+each. One chunk per worker leaves nothing to balance with, and jackhmmer cost per
+query varies widely -- a query hitting hundreds of relatives builds a large MSA
+while one hitting nothing converges immediately -- so the slowest chunk sets the
+pace for the whole stage. Simulated on 300 queries across 26 workers, one chunk
+each wastes about 160% against the ideal split; four each wastes about 40%.
+
+Below a few hundred queries this falls to one query per chunk, which is exactly
+what small runs did before batching and is the fastest thing for them. The call
+count only needs reducing at thousands of queries, which is also the only place
+memory is a constraint.
 
 ### The window's genes are output too
 

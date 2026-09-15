@@ -961,7 +961,8 @@ class NeighborhoodExtractor:
 
 
 class NeighborhoodClusterer:
-	CHUNK = 100     # queries handed to one jackhmmer call
+	CHUNK = 100               # most queries in one jackhmmer call
+	CHUNKS_PER_WORKER = 16    # so the tail of the run is not one coarse round
 
 	def __init__(self, iterations: int = 3, incE: float = 1e-3,
 				 workers: Optional[int] = None):
@@ -990,9 +991,17 @@ class NeighborhoodClusterer:
 			return [(name, {self._name(h) for h in r.hits if h.included})
 					for name, r in zip(names, results)]
 
-		items = list(digital.items())
-		size = max(1, min(self.CHUNK,
-						  -(-len(items) // max(self.workers or 1, 1))))
+		items = sorted(digital.items())
+		# Chunking exists only to keep the number of jackhmmer calls down,
+		# because each call leaves about 2 MB behind and thousands of them
+		# exhaust memory. It costs time at the tail: the last round runs with
+		# only (chunks mod workers) workers busy while the rest idle for a whole
+		# chunk, so coarse chunks waste more. Enough chunks per worker keeps
+		# that under about 5%, and below a few hundred queries it falls to one
+		# query per chunk, which is exactly what the run did before chunking
+		# existed and is the fastest thing at that size.
+		slots = max(self.workers or 1, 1) * self.CHUNKS_PER_WORKER
+		size = max(1, min(self.CHUNK, len(items) // slots))
 		chunks = [items[i:i + size] for i in range(0, len(items), size)]
 		adjacency = {}
 		with ThreadPoolExecutor(max_workers=self.workers) as pool:
@@ -1028,7 +1037,7 @@ class NeighborhoodClusterer:
 				seen.add(x)
 				stack.extend(symmetric.get(x, set()) - component)
 			families.append(sorted(component))
-		families.sort(key=len, reverse=True)
+		families.sort(key=lambda f: (-len(f), f[0]))
 		return families
 
 

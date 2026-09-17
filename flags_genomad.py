@@ -4,13 +4,12 @@ import subprocess
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 
-
 class MgeHit(NamedTuple):
 	assembly: str
 	contig: str
 	start: int
 	end: int
-	type: str            # the classification itself, not a generic label
+	type: str
 	probability: float
 	columns: Tuple[str, ...]
 	values: Tuple[str, ...]
@@ -88,9 +87,6 @@ class GenomadScanner:
 		return True, where
 
 	def scan(self, jobs, statuses):
-		"""jobs: [(assembly, genome_path, windows)]. geNomad's cost is dominated
-		by loading its database and model, so every assembly goes into as few
-		invocations as possible rather than one each."""
 		import flags_scan
 		hits = []
 		batch = 0
@@ -153,7 +149,7 @@ class GenomadScanner:
 				flags_tools.brief(proc.stderr or proc.stdout)))
 		return self._collect(assembly, out_dir, offsets)
 
-	def _collect(self, assembly: str, out_dir: str, offsets) -> List[MgeHit]:  # noqa
+	def _collect(self, assembly: str, out_dir: str, offsets) -> List[MgeHit]:
 		hits = []
 		for path, kind in self._summaries(out_dir):
 			hits.extend(self._parse(path, kind, assembly, offsets))

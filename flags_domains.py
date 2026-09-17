@@ -1,5 +1,14 @@
+from flags_report import family_numbers
+from flags_log import debug
+
+DEFAULT_INTERPRO = "interpro_metadata_processed.tsv"
+
 import gzip
 import os
+import sys
+import time
+from collections import Counter
+from typing import Optional
 import re
 from typing import Dict, List, NamedTuple
 
@@ -86,7 +95,7 @@ class InterProAnnotator:
 
 	def load(self, path: str) -> int:
 		import csv
-		csv.field_size_limit(1 << 24)   # description fields are far past the default
+		csv.field_size_limit(1 << 24)
 		opener = gzip.open if path.endswith(".gz") else open
 		with opener(path, "rt", encoding="utf-8", newline="") as fh:
 			reader = csv.DictReader(fh, delimiter="\t")
@@ -107,7 +116,7 @@ class InterProAnnotator:
 						continue
 					if key in self.by_pfam:
 						self.collisions += 1
-						continue   # first entry wins, keeping the join deterministic
+						continue
 					self.by_pfam[key] = record
 		return len(self.by_pfam)
 
@@ -267,3 +276,94 @@ class DomainScanner:
 				if family_name:
 					mapping[family_name] = clan
 		return mapping
+
+
+def parse_coverage(specs):
+	out = {}
+	for spec in specs or []:
+		name, _, values = spec.rpartition("=")
+		parts = [p for p in values.split(",") if p.strip()]
+		try:
+			nums = [float(p) for p in parts]
+		except ValueError:
+			raise ValueError("--hmm_coverage expects numbers, got {!r}".format(spec))
+		if not nums or len(nums) > 2 or any(not 0 <= n <= 1 for n in nums):
+			raise ValueError(
+				"--hmm_coverage takes one or two fractions between 0 and 1, "
+				"got {!r}".format(spec))
+		out[name] = (nums[0], nums[1] if len(nums) > 1 else 0.0)
+	return out
+
+
+def resolve_interpro(path: str) -> Optional[str]:
+	candidates = [path]
+	if not os.path.isabs(path):
+		candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+									   path))
+		candidates.append(path + ".gz")
+		candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+									   path + ".gz"))
+	for candidate in candidates:
+		if os.path.isfile(candidate):
+			return candidate
+	if path != DEFAULT_INTERPRO:
+		sys.exit("Error: --interpro file not found: {}".format(path))
+	debug("no InterPro table at {}; domain table will omit those columns".format(path))
+	return None
+
+
+def scan_domains(args, extractor, families, all_neighborhoods, out_path,
+				 timings, t0, want_domain_fig):
+	domains, clan_map, domain_table_written = {}, None, False
+	if want_domain_fig:
+		domains = {}
+		clan_map = None
+		if args.domains and not args.hmmdb:
+			print("Warning: --domains needs --hmmdb; drawing the figure without domains.")
+		elif args.domains:
+			try:
+				import flags_domains as dom_mod
+				if args.verbose:
+					print(">> scanning {} proteins for domains...".format(
+						len(extractor.sequences)), flush=True)
+				sources = [dom_mod.HmmSource.parse(spec, args.hmm_coverage)
+						   for spec in args.hmmdb]
+				scanner = dom_mod.DomainScanner(sources, evalue=args.ethreshold,
+												cpus=args.cpu or 0)
+				domains = scanner.scan(extractor.sequences)
+				clan_map = dom_mod.DomainScanner.load_clans(args.clans) if args.clans else None
+				if args.verbose:
+					for name, n in scanner.counts.items():
+						print(">> {}: {} domain hits".format(name, n), flush=True)
+			except Exception as e:
+				print("Warning: could not read the HMM database, drawing the figure without domains ({}).".format(e))
+		if domains:
+			interpro = None
+			interpro_path = resolve_interpro(args.interpro) if args.interpro else None
+			if interpro_path:
+				try:
+					interpro = dom_mod.InterProAnnotator()
+					n = interpro.load(interpro_path)
+					if args.verbose:
+						print(">> InterPro: {} Pfam entries mapped from {}{}".format(
+							n, os.path.basename(interpro_path),
+							", {} duplicate Pfam ids ignored".format(interpro.collisions)
+							if interpro.collisions else ""), flush=True)
+				except Exception as e:
+					print("Warning: could not read the InterPro table, writing the "
+						  "domain table without it ({}).".format(e))
+					interpro = None
+			try:
+				dom_mod.DomainScanner.write_report(
+					domains, out_path("_domains.tsv"), clans=clan_map,
+					interpro=interpro,
+					families=family_numbers(
+						families,
+						{g.accession for g in all_neighborhoods if g.is_rna},
+						{g.accession for g in all_neighborhoods if g.offset == 0},
+						Counter(g.accession for g in all_neighborhoods)))
+				domain_table_written = True
+			except Exception as e:
+				print("Warning: could not write the domain table ({}).".format(e))
+		timings["8_domains"] = time.perf_counter() - t0
+	return domains, clan_map, domain_table_written

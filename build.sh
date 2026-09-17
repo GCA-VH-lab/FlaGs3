@@ -50,7 +50,7 @@ With no options every optional tool is offered interactively.
 Components for --with:
   pfam            Pfam-A profiles, for --domains          (~1.5 GB)
   defence-hmm     DefenseFinder HMM profiles, for --domains --hmmdb defence=
-  mmseqs          MMseqs2, for --cluster_collapse
+  mmseqs          MMseqs2, for --cluster_method mmseqs
   genomad         geNomad and its database, for --genomad (~1.6 GB)
   defensefinder   DefenseFinder itself, for --defensefinder
   padloc          PadLoc, for --padloc
@@ -260,8 +260,8 @@ fi
 
 if conda run --name "${ENV_NAME}" command -v mmseqs &>/dev/null \
    || [[ -x "${THIS_DIR}/mmseqs/bin/mmseqs" ]]; then
-    info "MMseqs2 already installed --cluster_collapse is available."
-elif want mmseqs "Install MMseqs2? Needed for --cluster_collapse, which makes" \
+    info "MMseqs2 already installed --cluster_method mmseqs is available."
+elif want mmseqs "Install MMseqs2? Needed for --cluster_method mmseqs, which makes" \
                  "clustering affordable on very large inputs. ~20 MB."; then
     run_script "MMseqs2" "${MMSEQS_SCRIPT}" || true
 else

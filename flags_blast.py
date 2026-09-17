@@ -1,5 +1,7 @@
+from flags_fetch import NCBI_TOOL
 import os
 import re
+import sys
 import time
 import shutil
 import subprocess
@@ -74,7 +76,6 @@ def read_query(path: str) -> BlastQuery:
 
 
 def fetch_sequence(accession: str) -> str:
-	"""Resolve an accession to residues so both modes share one code path."""
 	handle = Entrez.efetch(db="protein", id=accession, rettype="fasta",
 						   retmode="text")
 	try:
@@ -85,7 +86,6 @@ def fetch_sequence(accession: str) -> str:
 
 
 BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
-NCBI_TOOL = "flags3"
 POLL_SECONDS = 60
 MAX_WAIT_SECONDS = 3600
 
@@ -269,7 +269,6 @@ class BlastSearcher:
 
 	@staticmethod
 	def _accession_of(target_id: str, description: str) -> Optional[str]:
-		"""Pull an accession out of 'ref|WP_000000001.1|' or a bare id."""
 		for token in re.split(r"[|\s]+", "{} {}".format(target_id or "",
 														description or "")):
 			token = token.strip()
@@ -279,7 +278,6 @@ class BlastSearcher:
 
 	@staticmethod
 	def _dedupe(hits: List[BlastHit], self_accession: Optional[str]) -> List[BlastHit]:
-		"""Keep best-first order, one row per accession, ignoring the version."""
 		seen = set()
 		out = []
 		for hit in hits:
@@ -314,3 +312,68 @@ def write_report(hits: List[BlastHit], query: BlastQuery, path: str):
 		for hit in hits:
 			out.write("{}\t{:.3g}\t{:.1f}\t{}\n".format(
 				hit.accession, hit.evalue, hit.bitscore, hit.description))
+
+
+def resolve_blast(args, proteins_assembly, proteins_only, inline, timings, t0):
+	blast_hits, blast_mod, queries = [], None, []
+	if not args.blast_input and not inline:
+		return blast_hits, queries, blast_mod
+	import flags_blast as blast_mod
+
+	if args.blast_input:
+		try:
+			queries.append(blast_mod.read_query(args.blast_input))
+		except (OSError, ValueError) as e:
+			sys.exit("Error: {}".format(e))
+	for text, path, n in inline:
+		try:
+			queries.append(blast_mod.parse_query(
+				[text], "line {} of {}".format(n, path)))
+		except ValueError as e:
+			sys.exit("Error: {}".format(e))
+
+	if args.blast_mode == "remote":
+		print(">> waiting on NCBI's queue; this often takes several minutes "
+			  "and can be much longer when NCBI is busy.", flush=True)
+	Entrez.email = args.user_email
+	Entrez.tool = NCBI_TOOL
+	if args.api_key:
+		Entrez.api_key = args.api_key
+	searcher = blast_mod.BlastSearcher(
+		mode=args.blast_mode, database=args.blast_db,
+		evalue=args.blast_evalue, max_hits=args.blast_hits,
+		threads=args.cpu or 0, email=args.user_email,
+		max_wait=args.blast_wait * 60,
+		report=lambda msg: print(">> {}".format(msg), flush=True))
+
+	for query in queries:
+		label = query.accession or "the supplied sequence"
+		if args.verbose:
+			print(">> BlastP ({}) for {} against {}...".format(
+				args.blast_mode, label, args.blast_db), flush=True)
+		try:
+			hits = searcher.search(query)
+		except Exception as e:
+			debug("blast failed", exc=True)
+			sys.exit("Error: BlastP search failed for {}: {}".format(label, e))
+		if not hits:
+			print("Warning: BlastP returned no hits for {}. Try a larger "
+				  "--blast_evalue or a fuller --blast_db.".format(label))
+			continue
+		already = {p.split(".")[0] for p, _ in proteins_assembly}
+		already |= {p.split(".")[0] for p in proteins_only}
+		added = [h.accession for h in hits
+				 if h.accession.split(".")[0] not in already]
+		proteins_only.extend(added)
+		blast_hits.extend(hits)
+		if args.verbose:
+			short = (" (asked for {}; the database had no more above the E-value "
+					 "cutoff)".format(args.blast_hits)
+					 if len(hits) < args.blast_hits else "")
+			print(">> BlastP: {} hits, {} new queries{}".format(
+				len(hits), len(added), short), flush=True)
+
+	if queries and not blast_hits:
+		sys.exit("Error: BlastP returned no hits for any query.")
+	timings["1b_blast"] = time.perf_counter() - t0
+	return blast_hits, queries, blast_mod

@@ -27,7 +27,9 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 * Flanking-gene extraction by gene count or by distance in bases
 * Defence systems from DefenseFinder and PadLoc, proviruses and plasmids from
   geNomad, and secretion systems from Sismis, drawn as labelled bands
-* All-vs-all clustering of neighbours into families with `pyhmmer` jackhmmer
+* All-vs-all clustering of neighbours into families with `pyhmmer` jackhmmer, or
+  with MMseqs2 when a run is too large for it, chosen with `-cm` and configured
+  in `tools_table.tsv`
 * Optional clustering of RNA genes alongside proteins
 * Phylogenetic trees from the query proteins: MAFFT alignment, gap-threshold
   trimming, then VeryFastTree or IQ-TREE with model selection and bootstrap
@@ -82,7 +84,32 @@ neighbourhoods so conserved gene arrangements are visible at a glance.
 * A full console transcript saved beside the results, surviving crashes and
   Ctrl-C
 
+## How the code is laid out
+
+`FlaGs3.py` parses the options, orchestrates a run, and coordinates the scanning
+tools. Everything else is a module named after what it does:
+
+| file | what it holds |
+|---|---|
+| `flags_fetch.py` | every part that touches the network: NCBI and MGnify downloads, local genome resolution, IPG mapping |
+| `flags_extract.py` | reading a genome and cutting the neighbourhood around a query |
+| `flags_cluster.py` | grouping flanking proteins into families, by jackhmmer or MMseqs2 |
+| `flags_report.py` | every output table, the run info, the family numbering |
+| `flags_view.py`, `flags_redraw.py` | drawing the figures, and redrawing them from a finished run |
+| `flags_scan.py` | cutting the windows the scanning tools read |
+| `flags_secretion.py`, `flags_genomad.py`, `flags_defence.py` | one per scanning tool |
+| `flags_domains.py`, `flags_features.py`, `flags_blast.py`, `flags_tree.py` | domains, signal peptides and membrane helices, BlastP, trees |
+| `flags_tools.py` | the tool table: commands, directories, scan ranges, clustering methods |
+| `flags_log.py`, `flags_pdf.py` | the console transcript, PDF conversion |
+
+`Architecture.md` explains why each is shaped the way it is.
+
 ## Version history
+
+**2.3.0** — clustering, neighbourhood extraction, fetching and reporting move out
+of `FlaGs3.py` into modules of their own; the clustering method is chosen with
+`-cm` and configured in `tools_table.tsv`, and MMseqs2 can find the homologous
+pairs instead of jackhmmer
 
 **2.2.0** — the scan window's genes and proteins are written out and its FASTA
 headers say what they are, clustering no longer exhausts memory on a dense

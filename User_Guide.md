@@ -199,7 +199,7 @@ the input is small enough; use `-g` with `-sr` when it is not.
 | `-gdb`, `--genomad_db DIR` | from tools table | geNomad database directory. |
 | `-e`, `--ethreshold X` | `1e-3` | Inclusion E-value for clustering. Lower is stricter, giving more and smaller families. |
 | `-n`, `--number N` | `3` | Jackhmmer iterations. More iterations find remoter homology but blur family boundaries. |
-| `-cc`, `--cluster_collapse [ID[,COV]]` | off | Collapse near-identical flanking proteins with MMseqs2, cluster only the representatives, and give each member its representative's family. Bare `-cc` means `0.9,0.8`. Needs `mmseqs`; run `mmseqs_installer.sh`. |
+| `-cm`, `--cluster_method NAME` | `jackhmmer` | How two flanking proteins are decided to be homologous, naming a row of `tools_table.tsv`. `jackhmmer` is the reference; `mmseqs_cluster` is roughly 45x faster and finds about 81% of the same within-family pairs; `mmseqs_cluster_exhaustive` finds about 86% and is quadratic. An unknown name lists what the table offers. |
 | `-cr`, `--cluster_rna` | off | Also cluster flanking RNA genes into families. Uses nhmmer on RNA sequences where available, otherwise groups by product name. |
 
 ### Output and progress
@@ -379,40 +379,60 @@ If one tool needs a different span, put a number in the `scan_range` column of
 `tools_table.tsv` for its row, or `genome` to give that one tool whole genomes.
 That column overrides `-sr` for that tool only.
 
-### When to collapse before clustering
+### Choosing a clustering method
 
 Clustering compares every flanking protein against every other, so its cost grows
-with the square of how many there are. `--cluster_collapse` reduces them to
-MMseqs2 representatives first, clusters those, and hands each member its
-representative's family.
+with the square of how many there are. `-cm` chooses how the comparison is made.
 
-Two honest caveats before you reach for it.
+| method | what it is |
+|---|---|
+| `jackhmmer` | the default and the reference: a profile HMM per query, three iterations |
+| `mmseqs_cluster` | MMseqs2 finds the homologous pairs instead |
+| `mmseqs_cluster_exhaustive` | MMseqs2 with its k-mer prefilter switched off |
 
-**The gain is usually smaller than the curve suggests.** FlaGs3 keys its sequence
-table by accession, so proteins identical across genomes already collapse for
-free — MMseqs2 only recovers what sits between your cutoff and 100% identity. On
-real flanking proteins from unrelated genera that was 1.00x at 90% and 1.17x at
-50%. It pays off when the input holds many strains of the same species; it does
-very little when the genomes are all different species. Choosing `-g` over `-r`
-is the far bigger lever.
+Measured against jackhmmer on a real subfamily of 2560 flanking proteins, with
+jackhmmer taking 440 seconds:
 
-**Collapsing hard can split families, not just merge them.** A sequence that
-would have bridged two groups never gets searched once it is folded into a
-representative, so the bridge disappears. Measured on a 950-protein run:
+| method | seconds | pairs jackhmmer also found | pairs it found that jackhmmer did not |
+|---|---|---|---|
+| `jackhmmer` | 440 | — | — |
+| `mmseqs_cluster` | 9.5 | 81% | 0.1% |
+| `mmseqs_cluster_exhaustive` | 12.6 | 86% | 0.6% |
 
-| setting | families | identical to an uncollapsed run |
-|---|---|---|
-| no collapse | 528 | — |
-| `-cc` (0.9, 0.8) | 528 | every one |
-| `-cc 0.5,0.8` | 533 | 521, with 71 proteins moved |
+The direction of the error matters more than its size. MMseqs2 **splits families
+that jackhmmer keeps whole**; it does not merge families jackhmmer keeps apart.
+On a figure a split reads as two colours where there should be one, which is
+visible and recoverable. A merge would read as conservation that is not there.
 
-At the default the result was indistinguishable from not collapsing at all. At
-50% it was not. Stay at `0.9,0.8` unless a run is otherwise impossible, and check
-`_collapse.tsv` when a family looks wrong.
+So `jackhmmer` for anything going into a figure you will interpret closely, and
+`mmseqs_cluster` when a run is otherwise too large to finish. The exhaustive
+variant is quadratic in the input, which makes it useful up to a few thousand
+proteins and pointless above that.
 
-It is never switched on automatically, whatever the run size. If `mmseqs` is
-missing the run stops rather than quietly clustering everything, since that turns
-an hour into days with nothing in the output to say why.
+Iterating MMseqs2's profiles does not help — three iterations recovered 77.7% of
+the pairs against one iteration's 77.6% — so the shipped row asks for one.
+Loosening the E-value or turning off composition bias correction do raise recall,
+and both drop precision to between 40% and 70%, which is why neither is offered.
+
+`mmseqs_cluster` needs `mmseqs`; run `mmseqs_installer.sh`. If it is missing the
+run stops and says so rather than falling back to jackhmmer, because a run that
+quietly changed method would not be comparable with the one beside it.
+
+### Tuning a method
+
+Every setting lives in the method's `tools_table.tsv` row, in the `options`
+column, as `key=value` separated by semicolons:
+
+```
+#name	command	directory	scan_range	engine	options
+jackhmmer				jackhmmer	iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16
+mmseqs_cluster	mmseqs easy-search {in} {in} {out} {tmp} ...			mmseqs	sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3
+```
+
+A row with an `engine` and no command is run through pyhmmer inside FlaGs3; one
+with both shells out, and its `options` fill the `{placeholders}` in the command.
+Adding a method is a row, not a code change. Override any of it in
+`tools_table.local.tsv`, which is not tracked.
 
 ### When a paired assembly holds nothing
 
@@ -453,12 +473,19 @@ columns it changes; anything left blank falls back to the default.
 To see what is actually in effect, read both files, or run with `-dbg`, which
 records each external command as it runs.
 
+The clustering methods live in the same pair of files. A local row is how you
+point `mmseqs_cluster` at a binary that is not on `PATH`, or try a different
+sensitivity without editing the tracked table.
+
 ## External tools
 
 Every program FlaGs3 shells out to is defined in `tools_table.tsv` beside the code:
-mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, DeepTMHMM and SignalP. Edit a
-row to change how one is invoked, or point `--tools` at your own copy. Rows you
-leave out keep their defaults.
+mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, geNomad, DefenseFinder,
+PadLoc, MMseqs2, DeepTMHMM and SignalP. Edit a row to change how one is invoked,
+or point `--tools` at your own copy. Rows you leave out keep their defaults.
+
+The same table also carries the clustering methods, which is why it has `engine`
+and `options` columns that most rows leave empty.
 
 ```
 #name	command	directory
@@ -617,7 +644,7 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_features.tsv` | transmembrane and signal-peptide regions per protein (`--tmhmm`/`--signalp`), so the figures can be redrawn later |
 | `visualisation_table.tsv` | the figure list for this run; edit and re-apply with `flags_redraw.py` |
 | `results_domains.tsv` | one row per domain hit: protein, family, domain, Pfam accession, clan, coordinates, E-value (`--domains`); with `--interpro`, also the InterPro entry, name, type, characterisation status, informativeness and a one-line interpretation |
-| `results_jackhits.tsv` | per-protein jackhmmer inclusion lists — the audit trail behind the families |
+| `results_clusterhits.tsv` | per-protein hit lists from whichever clustering method ran — the audit trail behind the families |
 | `results_speciesInfo.txt` | genome and organism per query row |
 | `results_QueryStatus.txt` | which genomes each query resolved to, and whether it produced a row |
 | `results_accessionIssues.txt` | queries that produced nothing, and why |
@@ -629,7 +656,6 @@ The tables below drop the stamp and write `results_...` for readability.
 | `results_genomad_diagnostics.txt` | per-genome geNomad status, windows scanned, and how much of the genome that came to (`--genomad`) |
 | `results_sismis_diagnostics.txt` | per-genome Sismis status, how many windows were scanned, and how much of the genome that came to (`--sismis`) |
 | `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
-| `results_collapse.tsv` | each MMseqs2 representative, its family, and its members, so a propagated family assignment can be traced back (`--cluster_collapse`) |
 | `results_window.tsv` | every gene inside the scan window: coordinates, strand, product, and whether it was in the drawn neighbourhood (`-sr`) |
 | `results_window.fasta` | those genes' proteins, each header carrying the query, assembly, contig, length, and position relative to the query gene (`-sr`) |
 | `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |

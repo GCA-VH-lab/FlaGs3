@@ -8,7 +8,6 @@ from typing import Dict, List, Tuple
 from Bio import Phylo, SeqIO
 
 
-
 class TreeBuilder:
 
   GAP_CHARS = "-."
@@ -103,9 +102,6 @@ class TreeBuilder:
           self.commands.append(" ".join(cmd))
           self.alignment = self._read_alignment(trimmed)
         else:
-          # _trim is the same column filter as trimal -gt, so it stands in for
-          # the default mode without the binary. The heuristic modes have no
-          # equivalent here, so those fall back to the untrimmed alignment.
           mode = (self.trimal_mode or "gt").lstrip("-")
           if mode == "gt":
             try:

@@ -1,13 +1,17 @@
-#name	command	directory	scan_range
-blastp	blastp -query {in} -db {db} -outfmt "6 sacc evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}		
-deeptmhmm	python3 predict.py --fasta {fasta} --output-dir {out}		
-defensefinder	defense-finder run --db-type gembase -o {out} {faa}		
-genomad	genomad end-to-end --cleanup --threads {threads} {in} {out} {db}		
-iqtree	iqtree -s {in} -m {model} --prefix {prefix} -T {threads} --quiet		
-mafft	mafft --auto --anysymbol --quiet --thread {threads} {in}		
-mmseqs	mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} -c {cov} --cov-mode 0 --threads {threads} -v 1		
-padloc	padloc --faa {faa} --gff {gff} --outdir {out} --cpu {threads}		
-signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast		
-sismis	sismis run -g {in} -o {out}		
-trimal	trimal -in {in} -out {out} -fasta {mode}		
-veryfasttree	VeryFastTree {in}		
+#name	command	directory	scan_range	engine	options
+blastp	blastp -query {in} -db {db} -outfmt "6 sacc evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}				
+deeptmhmm	python3 predict.py --fasta {fasta} --output-dir {out}				
+defensefinder	defense-finder run --db-type gembase -o {out} {faa}				
+genomad	genomad end-to-end --cleanup --threads {threads} {in} {out} {db}				
+iqtree	iqtree -s {in} -m {model} --prefix {prefix} -T {threads} --quiet				
+mafft	mafft --auto --anysymbol --quiet --thread {threads} {in}				
+mmseqs	mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} -c {cov} --cov-mode 0 --threads {threads} -v 1				
+padloc	padloc --faa {faa} --gff {gff} --outdir {out} --cpu {threads}				
+signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast				
+sismis	sismis run -g {in} -o {out}				
+trimal	trimal -in {in} -out {out} -fasta {mode}				
+veryfasttree	VeryFastTree {in}				
+jackhmmer				jackhmmer	iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16
+mmseqs_cluster	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 -s {sensitivity} -k {kmer} -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1			mmseqs	sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3
+mmseqs_cluster_exhaustive	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 --prefilter-mode 2 -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1			mmseqs	coverage=0.0;identity=0.0;evalue=1e-3
+nhmmer				nhmmer	incE=1e-3;chunk=100;chunks_per_worker=16

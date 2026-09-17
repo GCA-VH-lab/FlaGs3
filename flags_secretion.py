@@ -3,7 +3,6 @@ import subprocess
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 
-
 class SecretionHit(NamedTuple):
 	assembly: str
 	contig: str

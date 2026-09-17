@@ -6,7 +6,20 @@ import shlex
 TABLE_NAME = "tools_table.tsv"
 LOCAL_NAME = "tools_table.local.tsv"
 
-COLUMNS = ("name", "command", "directory", "scan_range")
+COLUMNS = ("name", "command", "directory", "scan_range", "engine", "options")
+
+CLUSTERING = {
+	"jackhmmer": {"engine": "jackhmmer",
+				  "options": "iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16"},
+	"nhmmer": {"engine": "nhmmer",
+			   "options": "incE=1e-3;chunk=100;chunks_per_worker=16"},
+	"mmseqs_cluster": {"engine": "mmseqs",
+					   "options": "sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3"},
+	"mmseqs_cluster_exhaustive": {"engine": "mmseqs",
+								  "options": "coverage=0.0;identity=0.0;evalue=1e-3"},
+}
+
+_extra = {}
 
 DEFAULTS = {
 	"mafft": ("mafft --auto --anysymbol --quiet --thread {threads} {in}", ""),
@@ -19,6 +32,10 @@ DEFAULTS = {
 	"defensefinder": ("defense-finder run --db-type gembase -o {out} {faa}", ""),
 	"padloc": ("padloc --faa {faa} --gff {gff} --outdir {out} --cpu {threads}", ""),
 	"genomad": ("genomad end-to-end --cleanup --threads {threads} {in} {out} {db}", ""),
+	"jackhmmer": ("", ""),
+	"nhmmer": ("", ""),
+	"mmseqs_cluster": ("mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 -s {sensitivity} -k {kmer} -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1", ""),
+	"mmseqs_cluster_exhaustive": ("mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 --prefilter-mode 2 -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1", ""),
 	"mmseqs": ("mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} "
 			   "-c {cov} --cov-mode 0 --threads {threads} -v 1", ""),
 	"deeptmhmm": ("python3 predict.py --fasta {fasta} --output-dir {out}", ""),
@@ -41,23 +58,22 @@ def local_path(path=None):
 
 
 def load(path=None):
-	"""Read the shipped defaults, then tools_table.tsv, then
-	tools_table.local.tsv. The local file is what the installers write, so
-	machine-specific paths never end up in the committed table."""
-	global _loaded, _scan
+	global _loaded, _scan, _extra
 	tools = {name: (cmd, wd) for name, (cmd, wd) in DEFAULTS.items()}
 	scan = {}
+	extra = {name: dict(CLUSTERING.get(name, {})) for name in CLUSTERING}
 	targets = [table_path(path)]
 	if path is None:
 		targets.append(local_path())
 	for target in targets:
-		_read_into(target, tools, scan, required=bool(path))
+		_read_into(target, tools, scan, extra, required=bool(path))
 	_loaded = tools
 	_scan = scan
+	_extra = extra
 	return tools
 
 
-def _read_into(target, tools, scan, required=False):
+def _read_into(target, tools, scan, extra, required=False):
 	if os.path.isfile(target):
 		with open(target, newline="", encoding="utf-8") as fh:
 			for row in csv.DictReader(
@@ -77,6 +93,14 @@ def _read_into(target, tools, scan, required=False):
 				directory = clean.get("directory", "")
 				tools[name] = (command,
 							   os.path.expanduser(directory) if directory else known[1])
+				engine = clean.get("engine", "")
+				options = clean.get("options", "")
+				if engine or options or name in extra:
+					entry = extra.setdefault(name, {})
+					if engine:
+						entry["engine"] = engine
+					if options:
+						entry["options"] = options
 				span = clean.get("scan_range", "")
 				if span:
 					if span.lower() == "genome":
@@ -96,6 +120,18 @@ def scan_range(name: str, default):
 	if _loaded is None:
 		load()
 	return _scan.get(name, default)
+
+
+def clustering(name: str):
+	if not _loaded:
+		load()
+	return dict(_extra.get(name, {}))
+
+
+def clustering_names():
+	if not _loaded:
+		load()
+	return sorted(_extra)
 
 
 def get(name: str):

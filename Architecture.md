@@ -188,7 +188,134 @@ they are orders of magnitude larger than the other tables.
 
 ---
 
+## What is left in FlaGs3.py
+
+`main`, `build_parser`, `AccessionListReader`, `InstanceLock`, and the scan
+coordination -- `run_background_scans`, `Scans`, `scan_outcome`, `report_scan`.
+Running three tools concurrently and assembling their results is orchestration,
+which is what main is for; cutting the windows they scan is not, so
+`scan_windows`, `row_spans` and `flags_tools_span` moved to `flags_scan.py`.
+
+Domain scanning moved to `flags_domains.py` entire: `scan_domains` with
+`parse_coverage` and `resolve_interpro`, which parse `--hmm_coverage` and find
+the InterPro table and exist for no other caller. `write_window_tables` and its
+two helpers moved to `flags_report.py`, with the other output tables.
+
+## Fetching
+
+### Everything that touches the network is in one file
+
+`flags_fetch.py` holds the rate limiter, the three ways a genome arrives --
+downloaded from NCBI, downloaded from MGnify, or found in a local directory --
+and the IPG mapper that turns a protein accession into an assembly. Nothing else
+in the tree opens a socket.
+
+They belong together because they share more than a topic: one rate limiter, one
+retrying session, one `GenomeFiles` result whether the files were fetched or found
+on disk. `LocalGenomeResolver` is not a downloader but it answers the same
+question, so callers ask for genomes without caring which of the three replied.
+
+`ProteinAssemblyMapper` moves with them because IPG resolution is NCBI traffic
+under the same rate limit and the same Entrez configuration, even though what it
+returns is an accession rather than a file.
+
+### Reporting is a module, logging stays a leaf
+
+`flags_report.py` holds `ReportWriter`, `write_run_info`, `print_summary`,
+`note_skipped`, the family numbering, `VERSION` and `plural` -- everything that
+produces something a reader sees. `flags_log.py` keeps only the console
+transcript, because ten modules import it for `debug()` alone and should not have
+to pull in the report writer to get it.
+
+`VERSION` and `plural` live there because both appear in what is reported and
+because modules `FlaGs3.py` imports need them: leaving them in `FlaGs3.py` would
+have made the import circular.
+
+`flags_redraw.py` had its own `plural` and `flags_blast.py` its own `NCBI_TOOL`.
+Both duplicates are gone.
+
+### Blast is a fetch, and stays its own module
+
+`resolve_blast` was in `FlaGs3.py` while everything it drove was in
+`flags_blast.py`. It moves to the module it belongs to rather than into
+`flags_fetch.py`: BLAST does talk to NCBI, but most of what that file does is
+parse hits and write a report, and folding it into the downloader would have made
+an 800-line module out of two coherent ones. `NCBI_TOOL` is imported from
+`flags_fetch.py`, which is where NCBI etiquette is configured.
+
 ## Clustering
+
+### Two modules, one graph
+
+`flags_cluster.py` holds everything that turns sequences into families, and
+`flags_extract.py` everything that turns a genome into a neighbourhood. Both were
+inside `FlaGs3.py`, which had grown to the point where the clustering work of the
+last few versions was hard to find at all.
+
+A family is a connected component of a graph whose edges mean "these two proteins
+are homologous". Only the edge-finding differs between methods, so
+`connected_components` is a module-level function rather than a method either
+class owns: `RnaClusterer` used to reach into `NeighborhoodClusterer` for it,
+which is the kind of thing that stops a split into modules from being possible.
+
+`Clusterer` holds the graph, the digitisation and the component pass.
+`PyhmmerClusterer` adds the chunked thread pool and leaves the search itself to
+`JackhmmerClusterer` and `NhmmerClusterer`. `MmseqsClusterer` shells out instead
+and shares nothing but the base. `build()` reads the table and returns whichever
+applies, so `main()` names a method and never knows which engine answers.
+
+### The table, not the code, carries the settings
+
+`tools_table.tsv` gained `engine` and `options`, so a clustering method is a row
+there like every other tool rather than a second table to learn. jackhmmer's
+iterations and inclusion threshold sit beside MMseqs2's sensitivity and k-mer
+length, and beside mafft's command line. A row with an `engine` and no command is
+a pyhmmer method; one with both shells out. `tools_table.local.tsv` already
+existed to keep machine paths out of commits and now covers these too.
+
+An unknown method name lists what the table does offer. A method whose binary is
+missing names the binary, the method and the file to fix, rather than falling
+back to something else -- a run that quietly changed method would make two
+results incomparable.
+
+### What the methods cost
+
+Measured against jackhmmer on a real subfamily of 2560 flanking proteins,
+jackhmmer taking 440 s:
+
+  mmseqs                5.6 s, 78% of jackhmmer's within-family pairs, 99.8% precision
+  mmseqs, k-mer 5       9.5 s, 81%, 99.9%
+  mmseqs exhaustive    12.6 s, 86%, 99.4%
+
+Iterating MMseqs2 profiles adds nothing: three iterations recovered 77.7% against
+one iteration's 77.6%. Switching the prefilter off entirely recovers 5 points,
+which is what `mmseqs-exhaustive` is for; the rest of the gap is a profile HMM
+reaching divergence a substitution matrix does not, and no setting closes it.
+Loosening the E-value or disabling composition bias correction do raise recall,
+and both drop precision to 40-70%, so neither is in the table.
+
+The failure mode matters as much as the number. MMseqs2 splits families that
+jackhmmer keeps whole; it does not merge families jackhmmer keeps apart. A split
+shows up as two colours where there should be one. A merge would show up as
+conservation that is not there.
+
+### RNA families are reproducible too
+
+`RnaClusterer` searched `digital.items()` in dictionary order and
+`cluster_by_name` sorted families by size with no tie-break, so RNA numbering
+could differ between two runs of the same input -- the same defect fixed for
+proteins in 2.1.0. Queries are sorted before searching and families break ties on
+their first member.
+
+### --cluster_collapse is gone
+
+Collapsing with MMseqs2 and running jackhmmer on the representatives was a way to
+make a large run finish. `-cm mmseqs` does the same job more directly, and the
+hybrid that would have justified keeping the collapse -- MMseqs2 grouping with
+jackhmmer linking the groups -- is not implemented. `flags_collapse.py` is
+removed with it.
+
+
 
 `NeighborhoodClusterer` runs jackhmmer with every flanking protein as a query
 against all of them, building an adjacency map from the included hits, then takes
@@ -1210,3 +1337,39 @@ on source anywhere else.
 `main()`, and register it in the parallel task group. If it goes through BioLib,
 subclass `_BioLibScanner` rather than calling `biolib` directly, so it inherits
 `_SUBMIT_LOCK` and the scratch-directory handling described above.
+
+## Small things worth knowing
+
+These are the details that used to sit as docstrings next to the code.
+
+**Accessions from BLAST.** `_accession_of` accepts both `ref|WP_000000001.1|`
+and a bare id, because which form comes back depends on the database. `_dedupe`
+keeps the first row per accession, ignoring the version suffix, so the best hit
+survives and a second copy of the same protein does not crowd out a different one.
+
+**Download records.** `_download_url` pulls the URL out of an NCBI download record
+without pinning the field names, which have changed between API versions.
+
+**geNomad batching.** `scan` takes `[(assembly, genome_path, windows)]` because
+geNomad's cost is dominated by loading its database, so one invocation over many
+genomes beats one per genome by roughly the startup time times the genome count.
+
+**Window batches.** `write_batches` yields `(fasta_path, offsets)` and starts a
+new file once one holds `max_bases` of sequence, so a single invocation never
+exceeds what the tool will accept. `shared_batches` cuts the windows once and
+lets every tool asking for the same span reuse the same files, so sismis and
+geNomad on one `-sr` do not each write their own copy.
+
+**Redraw.** `Gene` stands in for `FlankingGene`, rebuilt from `_operon.tsv`, so
+redrawing needs no genome. `render_figure` returns an empty string when nothing
+in the spec applies, and `render_all` returns the names it actually wrote.
+`_splittable` is false for a figure carrying a tree panel, because the tree spans
+every row at once and cutting the rows without pruning the tree would produce a
+figure that lies.
+
+**Colour.** `_classic_palette` reproduces FlaGs2's `random_color()`: twenty hues
+on a five-step grid at L=0.5, S=0.5, so a figure drawn now matches one drawn by
+the old tool. `_lighten` blends a hex colour towards white, 0 unchanged and 1
+white. `_accent` is the outer ring for a gene that is more than its family --
+query, RNA, pseudogene. `_readable_on` picks black or white, whichever stays
+legible on the arrow's fill.

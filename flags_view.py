@@ -68,7 +68,6 @@ class _FlaGsBase:
 
 	@staticmethod
 	def _classic_palette(n: int) -> List[str]:
-		"""FlaGs2's random_color(): 20 hues on a 5-step grid, L=0.5, S=0.5."""
 		hues = [int(h * 3.6) / 100.0 for h in range(0, 100, 5)]
 		return ["#%02x%02x%02x" % tuple(int(f * 255) for f in
 									    colorsys.hls_to_rgb(hues[i % len(hues)], 0.5, 0.5))
@@ -183,7 +182,6 @@ class _FlaGsBase:
 
 	@staticmethod
 	def _lighten(colour, amount):
-		"""Blend a hex colour towards white. amount 0 = unchanged, 1 = white."""
 		try:
 			r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
 		except (ValueError, IndexError):
@@ -195,7 +193,6 @@ class _FlaGsBase:
 		return 2
 
 	def _accent(self, gene):
-		"""Outer ring colour for a gene that is more than just its family."""
 		special = self._special_type(gene.accession)
 		if special == "pseudo":
 			return self.PSEUDO[1]
@@ -238,7 +235,7 @@ class OperonView(_FlaGsBase):
 		self.monochrome = monochrome
 		self.show_numbers = show_numbers
 		self.no_overlaps = no_overlaps
-		self.tree_w = 0          # set per figure; 0 means no tree gutter
+		self.tree_w = 0
 		self.newick = ""
 
 	def _row_spans(self, rows, by_query):
@@ -520,7 +517,7 @@ class OperonView(_FlaGsBase):
 
 	@staticmethod
 	def _band_lanes(hits):
-		lanes = []           # last end drawn in each lane
+		lanes = []
 		placed = {}
 		for i, h in sorted(enumerate(hits), key=lambda kv: (kv[1].start, kv[1].end)):
 			for lane, end in enumerate(lanes):
@@ -685,7 +682,7 @@ class OperonView(_FlaGsBase):
 			lo, hi = (x_e, x_s) if x_e < x_s else (x_s, x_e)
 			if kind == "tm":
 				top, bot = cy - h / 2, cy + h / 2
-				n = 4                                   # number of hatch lines
+				n = 4
 				for k in range(1, n + 1):
 					hy = top + (bot - top) * k / (n + 1)
 					out.append('<line x1="{:.1f}" y1="{:.1f}" x2="{:.1f}" y2="{:.1f}" '
@@ -715,7 +712,6 @@ class OperonView(_FlaGsBase):
 
 	@staticmethod
 	def _readable_on(fill: str) -> str:
-		"""Black or white, whichever stays legible on the arrow's fill."""
 		try:
 			r, g, b = (int(fill[i:i + 2], 16) for i in (1, 3, 5))
 		except (ValueError, IndexError):

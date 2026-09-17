@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 
 FeatureRegion = Tuple[str, int, int]
 
-_SUBMIT_LOCK = threading.Lock()   # pybiolib sign-in is not thread-safe; see Architecture.md
+_SUBMIT_LOCK = threading.Lock()
 _WARMUP_LOCK = threading.Lock()
 _warmed_up = False
 
@@ -189,7 +189,7 @@ class _BioLibScanner:
 		self._write_fasta(sequences, os.path.join(tmp, fasta_name))
 		with _SUBMIT_LOCK:
 			prev_cwd = os.getcwd()
-			os.chdir(tmp)   # fasta must reach app.cli() as a bare relative name; see Architecture.md
+			os.chdir(tmp)
 			try:
 				app = self._biolib.load(app_slug)
 				job = app.cli(args=args_template.format(fasta=fasta_name))

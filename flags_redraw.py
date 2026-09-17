@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from flags_report import plural
 import argparse
 import csv
 import os
@@ -46,11 +47,11 @@ def read_default_table() -> str:
 class FigureSpec(NamedTuple):
 	name: str
 	mode: str = "versatile"
-	tree_width: Optional[float] = None      # None = no tree panel
+	tree_width: Optional[float] = None
 	features: Set[str] = frozenset()
 	family_numbers: bool = True
 	requires: Set[str] = frozenset()
-	geometry: Dict[str, float] = {}         # every numeric knob, absent = default
+	geometry: Dict[str, float] = {}
 
 	@property
 	def monochrome(self) -> bool:
@@ -116,11 +117,11 @@ def parse_row(row: Dict[str, str]) -> FigureSpec:
 
 	tree_width = _as_number(row.get("tree_width", ""), float, "tree_width", name)
 	if tree_width is False:
-		tree_width = None          # False = no tree panel
+		tree_width = None
 	elif tree_width is None:
 		tree_width = 1.0 if mode in ("triangles", "classic") else None
 	if mode == "triangles" and tree_width is None:
-		tree_width = 1.0           # a triangles figure without a tree is just rows
+		tree_width = 1.0
 
 	bpp = _as_number(row.get("bases_per_pixel", ""), float, "bases_per_pixel", name)
 	if bpp is not None and bpp is not False and bpp <= 0:
@@ -167,9 +168,7 @@ def write_default_table(path: str):
 		out.write(read_default_table())
 
 
-
 class Gene(NamedTuple):
-	"""Stands in for FlaGs3.FlankingGene, rebuilt from _operon.tsv."""
 	accession: str
 	strand: str
 	start: int
@@ -300,7 +299,7 @@ def load_run(directory: str, prefix: str = None) -> RunData:
 			return out
 		for row in _rows(p):
 			if not row.get("contig") or not (row.get("start") or "").isdigit():
-				continue      # older files without the normalised columns
+				continue
 			out.append(Hit(
 				assembly=row.get("assembly", ""), contig=row["contig"],
 				start=int(row["start"]), end=int(row.get("end") or 0),
@@ -351,7 +350,6 @@ def has_data(spec: FigureSpec, data: RunData) -> bool:
 
 
 def render_figure(spec: FigureSpec, data: RunData, no_overlaps: bool = False) -> str:
-	"""Draw one figure from a spec. Returns SVG text, or '' if nothing applies."""
 	from flags_view import OperonView, NeighborhoodVisualizer
 
 	g = dict(spec.geometry)
@@ -425,7 +423,7 @@ def _feature_kind(kind: str) -> str:
 	return "tmhmm"
 
 
-EDITOR_LIMIT = 16383   # Illustrator's largest canvas, and librsvg's, in px
+EDITOR_LIMIT = 16383
 
 
 def _oversize(svg: str, limit: int = EDITOR_LIMIT):
@@ -436,10 +434,6 @@ def _oversize(svg: str, limit: int = EDITOR_LIMIT):
 	if max(w, h) <= limit:
 		return None
 	return int(w), int(h)
-
-
-def plural(n, word, many=None):
-	return "{} {}".format(n, word if n == 1 else (many or word + "s"))
 
 
 def _row_order(data: RunData) -> List[str]:
@@ -460,13 +454,10 @@ def _rows_subset(data: RunData, rows) -> RunData:
 
 
 def _rows_per_part(spec, data, rows, full_height, limit) -> int:
-	"""Height is a fixed part -- title, legend, axis -- plus a cost per row, and
-	every part repeats the fixed part. Measuring one probe gives both terms, so
-	the row count comes out of the real layout rather than a guessed margin."""
 	guess = max(1, int(len(rows) * limit / full_height * 0.9))
 	try:
 		probe = render_figure(spec, _rows_subset(data, rows[:guess]))
-		size = _oversize(probe, 0)          # 0 == always report the dimensions
+		size = _oversize(probe, 0)
 	except Exception:
 		size = None
 	if size and guess < len(rows):
@@ -480,8 +471,6 @@ def _rows_per_part(spec, data, rows, full_height, limit) -> int:
 
 
 def _splittable(spec: FigureSpec, data: RunData) -> bool:
-	"""A tree panel spans every row at once, so a figure carrying one cannot be
-	cut into parts without pruning the tree to match. Those stay whole."""
 	if spec.mode == "triangles":
 		return False
 	return not (spec.tree_width and data.newick)
@@ -490,7 +479,6 @@ def _splittable(spec: FigureSpec, data: RunData) -> bool:
 def render_all(specs: List[FigureSpec], data: RunData, out_path, verbose=False,
 			   pdf=False, max_height: int = EDITOR_LIMIT,
 			   no_overlaps: bool = False):
-	"""Render every spec. Returns the list of figure names actually written."""
 	written = []
 	for spec in specs:
 		if not has_data(spec, data):

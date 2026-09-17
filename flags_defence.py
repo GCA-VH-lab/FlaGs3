@@ -11,14 +11,14 @@ class DefenceHit(NamedTuple):
 	contig: str
 	start: int
 	end: int
-	type: str            # the system name, which is what the band is labelled with
+	type: str
 	probability: float
 	tools: str
 	genes: Tuple[str, ...]
 
 
 class Replicon(NamedTuple):
-	name: str            # synthetic contig id, safe for filenames and tool ids
+	name: str
 	row: str
 	assembly: str
 	contig: str

@@ -6,9 +6,9 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 
 class ScanWindow(NamedTuple):
 	contig: str
-	start: int         # analysis range, 1-based inclusive
+	start: int
 	end: int
-	slice_start: int   # what is actually handed to the tool, margin included
+	slice_start: int
 	slice_end: int
 
 
@@ -40,7 +40,7 @@ def merge_windows(spans, margin: int = 0,
 	return out
 
 
-MAX_BATCH_BASES = 200_000_000   # one tool invocation's worth of sequence
+MAX_BATCH_BASES = 200_000_000
 
 
 def _records(genome_path, windows):
@@ -66,9 +66,6 @@ def _records(genome_path, windows):
 
 
 def describe_window(assembly, window, length, queries=None):
-	"""The record id has to stay a short token, since the tools echo it back and
-	it is what the offset table is keyed on. Everything a reader needs goes in
-	the description after it."""
 	primary = (queries or [None])[0]
 	fields = ["assembly={}".format(assembly),
 			  "contig={}".format(window.contig),
@@ -88,8 +85,8 @@ def describe_window(assembly, window, length, queries=None):
 	return " ".join(fields)
 
 
-WINDOW_QUERY_POS = {}     # query -> (start, end, strand), filled in by the caller
-WINDOW_QUERIES = {}       # (assembly, contig, start, end) -> [query, ...]
+WINDOW_QUERY_POS = {}
+WINDOW_QUERIES = {}
 
 
 def _queries_for(assembly, window):
@@ -105,8 +102,6 @@ def _queries_for(assembly, window):
 
 
 def write_batches(jobs, out_dir: str, max_bases: int = MAX_BATCH_BASES):
-	"""jobs: [(assembly, genome_path, windows)]. Yields (fasta_path, offsets),
-	splitting so one file never holds more than max_bases of sequence."""
 	os.makedirs(out_dir, exist_ok=True)
 	batch, offsets, bases, index, number = None, {}, 0, 0, 0
 	path = ""
@@ -144,9 +139,6 @@ _STORE_LOCK = threading.Lock()
 
 def shared_batches(key: str, jobs, out_dir: str,
 				   max_bases: int = MAX_BATCH_BASES):
-	"""Cut the windows once and let every tool asking for the same span reuse
-	the files. Sismis and geNomad both take nucleotide FASTA, and at batch scale
-	a second copy is hundreds of gigabytes."""
 	with _STORE_LOCK:
 		if key in _STORE:
 			return _STORE[key]
@@ -166,3 +158,45 @@ def place_batched(record_name: str, start: int, end: int, offsets):
 	coverage = "full" if window.start <= lo and hi <= window.end else "partial"
 	return assembly, window.contig, lo, hi, coverage
 
+
+def flags_tools_span(args, tool):
+	import flags_tools
+	span = flags_tools.scan_range(tool, args.scan_range)
+	return "{}bp".format(span) if span else "genome"
+
+
+def scan_windows(args, extractor, mod, tool):
+	import flags_tools
+	import flags_scan
+	span = flags_tools.scan_range(tool, args.scan_range)
+	if not span:
+		return {}
+	spans = {}
+	for row_id, info in extractor.ranges.items():
+		assembly = row_id.rsplit("|", 1)[-1]
+		query = row_id.rsplit("|", 1)[0]
+		if info.scan_start and info.scan_end:
+			lo, hi = info.scan_start, info.scan_end
+		else:
+			lo = max(1, info.q_start - span)
+			hi = min(info.q_end + span, info.contig_length or info.q_end + span)
+		spans.setdefault(assembly, []).append((info.contig, lo, hi))
+		flags_scan.WINDOW_QUERIES.setdefault(
+			(assembly, info.contig, lo, hi), []).append(query)
+		flags_scan.WINDOW_QUERY_POS[query] = (info.q_start, info.q_end,
+											  info.q_strand)
+	return {assembly: flags_scan.merge_windows(
+			entries, args.scan_margin, extractor.contig_lengths(assembly))
+			for assembly, entries in spans.items()}
+
+
+def row_spans(all_neighborhoods):
+	rows = {}
+	for g in all_neighborhoods:
+		assembly = g.query.rsplit("|", 1)[-1]
+		if g.query in rows:
+			_, contig, lo, hi = rows[g.query]
+			rows[g.query] = (assembly, contig, min(lo, g.start), max(hi, g.end))
+		else:
+			rows[g.query] = (assembly, g.contig, g.start, g.end)
+	return rows

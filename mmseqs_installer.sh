@@ -18,7 +18,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     cat <<'USAGE'
 Usage: mmseqs_installer.sh [--binary]
 
-Installs MMseqs2, used by FlaGs3's --cluster_collapse to reduce flanking
+Installs MMseqs2, used by FlaGs3's --cluster_method mmseqs to find homologous
 proteins to representatives before clustering. MMseqs2 is open source, so
 this script downloads it for you; nothing has to be obtained first.
 
@@ -169,8 +169,8 @@ fi
 echo "DONE"
 echo
 echo "Use with FlaGs3:"
-echo "  --cluster_collapse            collapse at 90% identity / 80% coverage"
-echo "  --cluster_collapse 0.5,0.8    collapse harder, for very large runs"
+echo "  -cm mmseqs                    cluster with MMseqs2 instead of jackhmmer"
+echo "  -cm mmseqs-exhaustive         more sensitive, quadratic in the input"
 echo
 echo "Swap easy-linclust for easy-cluster in tools_table.tsv if you want the"
 echo "slower, more sensitive algorithm at low identity."

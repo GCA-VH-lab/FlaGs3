@@ -49,6 +49,7 @@ class FakeNcbi(ncbi.NcbiGenomes):
 
 
 def _setup(tmp_path, monkeypatch, queries, **config):
+	monkeypatch.setattr(Fetch, "RETRY_PAUSE", 0.0)
 	source = tmp_path / "source"
 	write_genome(source)
 	FakeNcbi.source = source

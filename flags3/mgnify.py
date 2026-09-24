@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -53,19 +54,25 @@ def url_map(payload) -> dict[str, str]:
 
 
 class MgnifyGenomes(Downloader):
+	API_RATE = 5.0
+
 	def __init__(self, directory: Path, rate: float, workers: int):
-		super().__init__(rate, workers)
+		super().__init__(self.API_RATE, workers)
 		self.directory = Path(directory)
 		self.workers = workers
 
 	def lookup(self, assembly: str) -> dict[str, str]:
+		clock = time.perf_counter()
 		r = self.get(API.format(assembly))
 		r.raise_for_status()
 		urls = url_map(r.json())
+		debug("mgnify {}: genome record in {:.1f} s, {} download urls".format(assembly, time.perf_counter() - clock, len(urls)))
 		if not urls:
+			clock = time.perf_counter()
 			r = self.get(API_DOWNLOADS.format(assembly))
 			r.raise_for_status()
 			urls = url_map(r.json())
+			debug("mgnify {}: downloads record in {:.1f} s, {} urls".format(assembly, time.perf_counter() - clock, len(urls)))
 		return urls
 
 	def fetch(self, assembly: str, slots: list[str]) -> dict[str, Path]:
@@ -86,8 +93,17 @@ class MgnifyGenomes(Downloader):
 				continue
 			jobs[slot] = (urls[name], self.directory / name)
 		got = {}
+
+		def timed(slot, url, local):
+			clock = time.perf_counter()
+			ok = self.stream(url, local)
+			size = local.stat().st_size if ok and local.is_file() else 0
+			debug("mgnify {} {}: {} from {} in {:.1f} s ({:,d} B)".format(
+				assembly, slot, "ok" if ok else "FAILED", url.split("/")[2], time.perf_counter() - clock, size))
+			return ok
+
 		with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as pool:
-			running = {slot: pool.submit(self.stream, url, local) for slot, (url, local) in jobs.items()}
+			running = {slot: pool.submit(timed, slot, url, local) for slot, (url, local) in jobs.items()}
 			for slot, job in running.items():
 				if job.result():
 					got[slot] = jobs[slot][1]

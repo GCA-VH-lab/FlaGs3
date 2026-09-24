@@ -1,5 +1,7 @@
 import gzip
 import os
+import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -55,6 +57,9 @@ class Downloader:
 
 	def stream(self, url: str, local: Path) -> bool:
 		partial = local.with_name(local.name + ".part")
+		return self._requests(url, local, partial)
+
+	def _requests(self, url: str, local: Path, partial: Path) -> bool:
 		for attempt in range(3):
 			try:
 				self.limiter.wait()

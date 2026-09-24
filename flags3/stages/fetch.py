@@ -83,6 +83,7 @@ class GenomeCache:
 
 class Fetch(Stage):
 	name = "fetch"
+	RETRY_PAUSE = 5.0
 
 	def run(self, run, config, out: Path) -> None:
 		inputs = InputList()
@@ -239,22 +240,39 @@ class Fetch(Stage):
 		return genomes
 
 	def _download(self, wanted, config, cache, found, source, failures):
+		from concurrent.futures import ThreadPoolExecutor
 		rate = 10.0 if config.text("api_key") else 5.0
 		workers = min(config.workers(), 10)
 		groups = {
 			"mgnify": {a: s for a, s in wanted.items() if mgnify.is_mgnify(a)},
 			"ncbi": {a: s for a, s in wanted.items() if not mgnify.is_mgnify(a)},
 		}
+		groups = {label: group for label, group in groups.items() if group}
 		for label, group in groups.items():
-			if not group:
-				continue
-			client = (mgnify.MgnifyGenomes if label == "mgnify" else ncbi.NcbiGenomes)(cache.directory, rate, workers)
 			note("downloading {} genomes from {}".format(len(group), label))
-			progress = (lambda done, total: note("{} download: {}/{}".format(label, done, total))) if len(group) > 3 else None
-			for assembly, got in client.fetch_many(group, progress).items():
-				if got:
-					found[assembly].update(got)
-					source[assembly] = label
-			for subject, reason in client.failures.items():
-				failures.append(Failure(subject, reason))
+
+		def fetch(label):
+			client = (mgnify.MgnifyGenomes if label == "mgnify" else ncbi.NcbiGenomes)(cache.directory, rate, workers)
+			progress = lambda done, total: note("{}: {}/{}".format(label, done, total))
+			return label, client, client.fetch_many(groups[label], progress)
+
+		import time
+		for attempt in range(2):
+			with ThreadPoolExecutor(max_workers=len(groups) or 1) as pool:
+				for label, client, results in pool.map(fetch, list(groups)):
+					for assembly, got in results.items():
+						if got:
+							found[assembly].update(got)
+							source[assembly] = label
+					if attempt == 1:
+						for subject, reason in client.failures.items():
+							failures.append(Failure(subject, reason))
+			groups = {label: {a: [s for s in slots if s not in found[a]] for a, slots in group.items() if any(s not in found[a] for s in slots)}
+				for label, group in groups.items()}
+			groups = {label: group for label, group in groups.items() if group}
+			if not groups:
+				break
+			if attempt == 0:
+				note("retrying {} genomes with missing files after a pause".format(sum(len(g) for g in groups.values())))
+				time.sleep(self.RETRY_PAUSE)
 		cache.scan()

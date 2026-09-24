@@ -127,8 +127,10 @@ class IpgMapper:
 
 
 class NcbiGenomes(Downloader):
+	FTP_RATE = 10.0
+
 	def __init__(self, directory: Path, rate: float, workers: int):
-		super().__init__(rate, workers)
+		super().__init__(self.FTP_RATE, workers)
 		self.directory = Path(directory)
 		self.workers = workers
 

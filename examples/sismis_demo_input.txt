@@ -1,0 +1,26 @@
+# FlaGs3 --sismis demo: five secretion-system types, two homologous queries each.
+# Every protein is a hallmark component sitting inside a Sismis-predicted cluster
+# of its own type, and each pair is a phmmer homolog pair (E < 1e-30) drawn from
+# two different genomes, so the neighbourhoods can be compared directly.
+#
+# type  protein          assembly          organism / role
+# T1SS  WP_253190518.1   GCF_002002925.1   Sphingomonas sp. LM7 - HlyB-like permease/ATPase
+# T1SS  WP_071914630.1   GCF_001887695.1   Bradyrhizobium sp. - permease/ATPase
+# T2SS  NP_417785.1      GCF_000005845.2   E. coli K-12 MG1655 - GspE secretion ATPase
+# T2SS  WP_077509532.1   GCF_002002925.1   Sphingomonas sp. LM7 - GspE secretion ATPase
+# T3SS  WP_011084624.1   GCF_000261605.1   Bradyrhizobium japonicum - SctN ATPase
+# T3SS  NP_460380.1      GCF_000006945.2   Salmonella Typhimurium LT2 - SsaN apparatus ATPase
+# T4SS  WP_077510502.1   GCF_002002925.1   Sphingomonas sp. LM7 - VirB4 conjugal transfer ATPase
+# T4SS  WP_038936971.1   GCF_000261605.1   Bradyrhizobium japonicum - TrbE conjugal transfer
+# T6SS  WP_038935430.1   GCF_000261605.1   Bradyrhizobium japonicum - TssL baseplate protein
+# T6SS  WP_071911373.1   GCF_001887695.1   Bradyrhizobium sp. - TssL baseplate protein
+WP_253190518.1	GCF_002002925.1
+WP_071914630.1	GCF_001887695.1
+NP_417785.1	GCF_000005845.2
+WP_077509532.1	GCF_002002925.1
+WP_011084624.1	GCF_000261605.1
+NP_460380.1	GCF_000006945.2
+WP_077510502.1	GCF_002002925.1
+WP_038936971.1	GCF_000261605.1
+WP_038935430.1	GCF_000261605.1
+WP_071911373.1	GCF_001887695.1

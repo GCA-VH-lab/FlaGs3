@@ -1,0 +1,10 @@
+#name	layers	mode	tree	numbers	palette	monochrome	font_size	row_height	gene_height	bases_per_pixel	pad	domain_height	label_step	arrow_head	min_gene_width	band_opacity	tree_width
+neighbors	cluster,cluster_rna	versatile	0	true	bright	false											
+tree	cluster,cluster_rna	versatile	1	true	bright	false											
+domains	cluster,cluster_rna,domains,features	versatile	0	false	bright	false											
+sismis	cluster,cluster_rna,sismis	versatile	0	false	bright	true											
+genomad	cluster,cluster_rna,genomad	versatile	0	false	bright	true											
+defence	cluster,cluster_rna,defence	versatile	0	false	bright	true											
+all-in-one	cluster,cluster_rna,domains,features,sismis,genomad,defence	versatile	1	true	bright	false											
+classic	cluster,cluster_rna	classic	0	true	classic	false											
+tree_classic	cluster,cluster_rna	classic	1	true	classic	false											

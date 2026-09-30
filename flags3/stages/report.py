@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from flags3 import fasta
 from flags3.log import note
-from flags3.schema import (MISSING, Family, Gene, GenomeFiles, QueryTarget, RangeReport, Row, RowInfo,
+from flags3.schema import (MISSING, Annotation, Family, Gene, GenomeFiles, QueryTarget, RangeReport, Row, RowInfo,
 	Unmatched, Window, split_row_id)
 from flags3.stage import Stage
 from flags3.stages.extract import PROTEINS, QUERIES
@@ -64,10 +64,12 @@ class RunTables:
 			self.occurrences[g.accession] = self.occurrences.get(g.accession, 0) + 1
 			self.products.setdefault(g.accession, "" if g.product == MISSING else g.product)
 		self.families: list[Family] = []
+		self.label_of: dict[str, str] = {}
 		for stage in ("cluster", "cluster_rna"):
 			if run.has(stage):
 				self.families += Family.read(run.stage_file(stage, Family.FILE))
-		self.label_of = {a: f.label for f in self.families if f.label != MISSING for a in f.accessions}
+				for a in Annotation.read(run.stage_file(stage, Annotation.FILE)):
+					self.label_of[a.subject] = a.label
 		self.domains: dict[str, list[str]] = {}
 		if run.has("domains"):
 			for d in Domain.read(run.stage_file("domains", Domain.FILE)):
@@ -142,10 +144,11 @@ class Report(Stage):
 
 	def families(self, t: RunTables, out: Path) -> None:
 		with open(out / "families.tsv", "w") as handle:
-			handle.write("family\tlabel\tsize\toccurrences\tproduct\tmembers\n")
+			handle.write("family\tlabel\tsize\toccurrences\tsubfamilies\tbridges\tproduct\tmembers\n")
 			for f in t.families:
 				product = next((t.products[a] for a in f.accessions if t.products.get(a)), MISSING)
-				handle.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(f.family, f.label, f.size, f.occurrences, product, f.members))
+				handle.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(f.family, f.label, f.size, f.occurrences,
+					f.subfamilies, f.bridges, product, f.members))
 
 	def fastas(self, t: RunTables, out: Path) -> None:
 		def describe(accession: str) -> str:
@@ -237,7 +240,7 @@ class Legacy:
 		with open(self.path("_outdesc.txt"), "w") as out:
 			for f in shared:
 				for acc in f.accessions:
-					out.write("{}({})\t{}\t{}\n".format(f.label, t.occurrences.get(acc, 0), acc, t.products.get(acc, "")))
+					out.write("{}({})\t{}\t{}\n".format(t.label_of.get(acc, f.label), t.occurrences.get(acc, 0), acc, t.products.get(acc, "")))
 				out.write("\n\n")
 
 	def species_info(self) -> None:

@@ -238,6 +238,8 @@ class Family(Row):
 	size: int
 	occurrences: int
 	members: str
+	subfamilies: str
+	bridges: str
 
 	@property
 	def accessions(self) -> list[str]:
@@ -250,6 +252,7 @@ class ClusterHit(Row):
 	accession: str
 	family: int
 	hits: str
+	full_hits: str
 
 
 @dataclass(frozen=True)

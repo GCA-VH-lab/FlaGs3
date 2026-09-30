@@ -45,8 +45,12 @@ def test_mmseqs_command_and_pairs(tmp_path):
 	assert argv[argv.index("--max-seqs") + 1] == "300"
 	assert argv[argv.index("-s") + 1] == "7.5"
 	hits = tmp_path / "hits.tsv"
-	hits.write_text("a\tb\nb\tzzz\nc\tc\n")
-	assert cluster.MmseqsClusterer.read_pairs(hits, {"a": "", "b": "", "c": ""}) == {"a": {"b"}, "b": set(), "c": {"c"}}
+	hits.write_text("a\tb\t0.9\t0.5\nb\tzzz\nc\tc\n")
+	assert c.read_pairs(hits, {"a": "", "b": "", "c": ""}) == {"a": {"b"}, "b": set(), "c": {"c"}}
+	assert c.coverage == {("a", "b"): (0.9, 0.5)}
+	c.adjacency = {"a": {"b"}, "b": set(), "c": set()}
+	assert c.full_length(0.6) == {"a": set(), "b": set(), "c": set()}
+	assert c.contains(0.6) == {"a": set(), "b": {"a"}, "c": set()}
 	broken = Tool("m")
 	broken.engine = "mmseqs"
 	broken.command = "mmseqs {in} {undefined}"
@@ -61,7 +65,8 @@ def test_family_labels(tmp_path):
 	assert tables.labels == {2: "1", 0: "2", 1: "Q1"}
 	tables.write(tmp_path)
 	fams = Family.read(tmp_path / Family.FILE)
-	assert [(f.family, f.label, f.size, f.occurrences) for f in fams] == [(1, "2", 2, 2), (2, "Q1", 2, 2), (3, "1", 1, 3), (4, MISSING, 1, 1)]
+	assert [(f.family, f.label, f.size, f.occurrences, f.subfamilies) for f in fams] == [
+		(1, "2", 2, 2, MISSING), (2, "Q1", 2, 2, MISSING), (3, "1", 1, 3, MISSING), (4, MISSING, 1, 1, MISSING)]
 	ann = Annotation.read(tmp_path / Annotation.FILE)
 	assert {a.subject for a in ann} == {"a", "b", "q", "x", "s"}
 	assert all(a.kind == "fill" and a.whole for a in ann)
@@ -91,3 +96,79 @@ def test_jackhmmer_stage_on_synthetic_genome(tmp_path):
 	assert Annotation.read(run.stage_file("cluster", Annotation.FILE)) == []
 	rna = Family.read(run.stage_file("cluster_rna", Family.FILE))
 	assert [f.members for f in rna] == ["rna_001"]
+
+
+def test_command_line_overrides(tmp_path):
+	from flags3.run import Config
+	from flags3.stages.cluster import Cluster
+	tools = Tools.load()
+	cfg = Config(tmp_path / "c.tsv")
+	cfg.update({"iterations": 5, "cluster_evalue": 1e-6})
+	Cluster.override(tools, "jackhmmer", cfg)
+	assert tools["jackhmmer"].options["iterations"] == "5" and tools["jackhmmer"].options["incE"] == "1e-06"
+	tools = Tools.load()
+	Cluster.override(tools, "mmseqs_cluster", cfg)
+	assert tools["mmseqs_cluster"].options["evalue"] == "1e-06" and "iterations" not in tools["mmseqs_cluster"].options
+
+
+def test_subfamilies_split_on_a_fusion(tmp_path):
+	thif = ["t1", "t2", "t3", "t4"]
+	uvra = ["u1", "u2"]
+	fusion = "f"
+	fragment = "frag"
+	members = thif + uvra + [fusion, fragment]
+	adjacency = {m: set() for m in members}
+	for group in (thif, uvra):
+		for a in group:
+			adjacency[a] |= set(group) - {a}
+			adjacency[a].add(fusion)
+			adjacency[fusion].add(a)
+	adjacency["frag"].add("t1")
+	adjacency["t1"].add("frag")
+	full = {m: set() for m in members}
+	for group in (thif, uvra):
+		for a in group:
+			full[a] |= set(group) - {a}
+	full["f"] |= set(uvra)
+	for u in uvra:
+		full[u].add("f")
+	contains = {m: set() for m in members}
+	contains["f"] |= set(thif)
+	contains["t1"].add("frag")
+	contains["t2"].add("frag")
+	labels, groups = cluster.subfamilies(members, full, contains)
+	assert labels == {"t1": "a", "t2": "a", "t3": "a", "t4": "a", "u1": "b", "u2": "b", "f": "ab", "frag": "a"}
+	assert [sorted(g) for g in groups] == [["t1", "t2", "t3", "t4"], ["f", "u1", "u2"]]
+	assert cluster.subfamilies(thif, full, contains) == ({}, [])
+	tables = FamilyTables([members], adjacency, {m: 2 for m in members}, {"t1"}, "", "jackhmmer", full, contains)
+	assert tables.member_label(0, "t2") == "Q1a" and tables.member_label(0, "f") == "Q1ab" and tables.member_label(0, "u1") == "Q1b"
+	assert tables.member_category(0, "t2") == "family:1/a" and tables.member_category(0, "f") == "family:1"
+	tables.write(tmp_path)
+	fam = Family.read(tmp_path / Family.FILE)[0]
+	assert fam.subfamilies == "a:4;b:3" and fam.bridges == "f:ab"
+	ann = {a.subject: a for a in Annotation.read(tmp_path / Annotation.FILE)}
+	assert ann["u2"].category == "family:1/b" and ann["u2"].label == "Q1b"
+
+
+def test_held_core_lends_its_letter_only_when_it_partitions():
+	full_a = ["a{}".format(i) for i in range(6)]
+	short = ["s1", "s2"]
+	other = ["o1", "o2"]
+	members = full_a + short + other
+	full = {m: set() for m in members}
+	for g in (full_a, short, other):
+		for m in g:
+			full[m] |= set(g) - {m}
+	contains = {m: set() for m in members}
+	for m in full_a[:4]:
+		contains[m].add("s1")
+	for m in full_a[:2]:
+		contains[m].add("s2")
+	labels, groups = cluster.subfamilies(members, full, contains)
+	assert [len(g) for g in groups] == [6, 2, 2]
+	assert labels["a0"] == "ac" and labels["a3"] == "ac" and labels["a5"] == "a"
+	assert labels["s1"] == "c" and labels["o1"] == "b"
+	for m in full_a:
+		contains[m].add("s1")
+	labels, _ = cluster.subfamilies(members, full, contains)
+	assert all(labels[m] == "a" for m in full_a)

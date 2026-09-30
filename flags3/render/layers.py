@@ -64,26 +64,36 @@ HATCH_STROKE = 5
 HATCH_GAP = 5
 
 
-def hatch_id(stage: str, category_index: int) -> str:
-	return "hatch-{}-{}".format(stage, category_index)
-
-
-def hatch_defs(stage: str, colours: dict[str, str]) -> str:
-	angle = HATCH_ANGLE.get(stage, 45)
+def hatch_lines(x0: float, y0: float, w: float, h: float, angle: int, colour: str, opacity: float) -> str:
 	period = HATCH_STROKE + HATCH_GAP
 	parts = []
-	for i, colour in enumerate(colours.values()):
-		parts.append('<pattern id="{}" patternUnits="userSpaceOnUse" width="{}" height="{}" patternTransform="rotate({})">'
-			'<line x1="{}" y1="0" x2="{}" y2="{}" stroke="{}" stroke-width="{}"/></pattern>'.format(
-				hatch_id(stage, i), period, period, angle, HATCH_STROKE / 2, HATCH_STROKE / 2, period, colour, HATCH_STROKE))
-	return "".join(parts)
+	if angle == 0:
+		x = x0 + HATCH_STROKE / 2
+		while x < x0 + w:
+			parts.append('<line x1="{0:.1f}" y1="{1:.1f}" x2="{0:.1f}" y2="{2:.1f}"/>'.format(x, y0, y0 + h))
+			x += period
+	else:
+		shift = h if angle > 0 else -h
+		x = x0 - h
+		while x < x0 + w + h:
+			parts.append('<line x1="{:.1f}" y1="{:.1f}" x2="{:.1f}" y2="{:.1f}"/>'.format(x, y0, x + shift, y0 + h))
+			x += period * 1.4142
+	return '<g stroke="{}" stroke-width="{}" stroke-opacity="{}">{}</g>'.format(colour, HATCH_STROKE, opacity, "".join(parts))
+
+
+def hatch_swatch(x: float, y: float, w: float, h: float, angle: int, colour: str, clip: str) -> str:
+	return ('<clipPath id="{0}"><rect x="{1}" y="{2}" width="{3}" height="{4}"/></clipPath>'
+		'<g clip-path="url(#{0})">{5}</g>'
+		'<rect x="{1}" y="{2}" width="{3}" height="{4}" fill="none" stroke="{6}" stroke-width="1"/>').format(
+			clip, x, y, w, h, hatch_lines(x, y, w, h, angle, colour, 1.0), colour)
 
 
 def draw_bands(layout: Layout, stage: str, annotations: list[Annotation], colours: dict[str, str],
 		codes: dict[str, str], opacity: float) -> tuple[str, dict[str, list], set[str]]:
 	by_subject = _by_subject(annotations)
-	index = {c: i for i, c in enumerate(colours)}
-	parts, side, drawn = [hatch_defs(stage, colours)], {}, set()
+	angle = HATCH_ANGLE.get(stage, 45)
+	parts, side, drawn = [], {}, set()
+	n = 0
 	for row in layout.rows:
 		window = layout.data.windows[row]
 		subject = "{}|{}".format(window.assembly, window.contig)
@@ -99,8 +109,11 @@ def draw_bands(layout: Layout, stage: str, annotations: list[Annotation], colour
 				continue
 			colour = colours[a.category]
 			drawn.add(a.category)
-			parts.append('<rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}" fill="url(#{})" fill-opacity="{}"/>'.format(
-				x0, top, x1 - x0, height, hatch_id(stage, index[a.category]), opacity))
+			clip = "band-{}-{}".format(stage, n)
+			n += 1
+			parts.append('<clipPath id="{}"><rect x="{:.1f}" y="{:.1f}" width="{:.1f}" height="{:.1f}"/></clipPath>'.format(
+				clip, x0, top, x1 - x0, height))
+			parts.append('<g clip-path="url(#{})">{}</g>'.format(clip, hatch_lines(x0, top, x1 - x0, height, angle, colour, opacity)))
 			code = codes.get(a.category, "")
 			if code and (code, colour) not in side.setdefault(row, []):
 				side[row].append((code, colour))

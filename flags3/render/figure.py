@@ -47,7 +47,7 @@ class Figure:
 			for row, items in per_row.items():
 				side.setdefault(row, []).extend(items)
 			self.legend_panels.append((STAGE_TITLES[stage], [(codes[c], self._band_label(stage, c), table[c]) for c in table if c in drawn],
-				layers.hatch_id(stage, 0).rsplit("-", 1)[0]))
+				stage))
 		L.extra_right = layers.side_width(L, side)
 		body.append(layers.draw_genes(L, style))
 		above: dict[str, list] = {}
@@ -188,12 +188,16 @@ class Figure:
 			longest = max((text.width("{}. {}".format(code, label), L.font) for code, label, _ in items), default=0)
 			col_w = int(longest) + 26
 			cols = max(1, min(len(items), (width - 2 * L.pad) // col_w))
+			rows_n = -(-len(items) // cols)
 			parts.append(text.text(L.pad, y, title, weight="bold"))
 			for i, (code, label, colour) in enumerate(items):
-				ex = L.pad + (i % cols) * col_w
-				ey = y + 16 + (i // cols) * 16
-				fill = "url(#{}-{})".format(hatch, self._hatch_index(hatch, colour)) if hatch else colour
-				parts.append('<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" stroke-width="1"/>'.format(ex + 2, ey - 8, fill, colour))
+				ex = L.pad + (i // rows_n) * col_w
+				ey = y + 16 + (i % rows_n) * 16
+				if hatch:
+					parts.append(layers.hatch_swatch(ex + 2, ey - 8, 12, 10, layers.HATCH_ANGLE.get(hatch, 45), colour,
+						"legend-{}-{}".format(hatch, i)))
+				else:
+					parts.append('<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" stroke-width="1"/>'.format(ex + 2, ey - 8, colour, colour))
 				parts.append(text.text(ex + 20, ey, "{}. {}".format(code, label)))
 			y += (-(-len(items) // cols) + 1) * 16 + 8
 		if genes:
@@ -205,11 +209,6 @@ class Figure:
 				ex += int(text.width(label, L.font)) + 46
 			y += 36
 		return '<g id="layer-legend">{}</g>'.format("".join(parts)), y - top
-
-	def _hatch_index(self, hatch: str, colour: str) -> int:
-		stage = hatch.split("-", 1)[1]
-		table = self.colours.assigned.get(stage, {})
-		return list(table.values()).index(colour) if colour in table.values() else 0
 
 	@staticmethod
 	def _mark(x, y, shape) -> str:
@@ -234,5 +233,5 @@ def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int
 	if len(whole.rows) <= capacity:
 		return [whole]
 	rows = whole.rows
-	return [Figure(data, spec, Colours(spec.palette, colours.overrides, spec.monochrome), rows[i:i + capacity], no_overlaps)
+	return [Figure(data, spec, Colours(spec.palette, colours.overrides, spec.monochrome, spec.numbering), rows[i:i + capacity], no_overlaps)
 		for i in range(0, len(rows), capacity)]

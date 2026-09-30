@@ -18,7 +18,7 @@ BAND_ORDER = ("sismis", "genomad", "defence")
 GEOMETRY = {
 	"font_size": 13, "row_height": 26, "gene_height": 8, "pad": 16, "domain_height": 6,
 	"bases_per_pixel": 10.4, "label_step": 12, "arrow_head": 7, "min_gene_width": 13,
-	"band_opacity": 0.85, "tree_width": 320,
+	"band_opacity": 0.85, "band_margin": 3, "tree_width": 320,
 }
 CLASSIC_GEOMETRY = {"font_size": 12, "row_height": 20, "gene_height": 15, "bases_per_pixel": 16.0}
 
@@ -36,6 +36,7 @@ class FigureSpec:
 	numbers: bool = True
 	palette: str = "bright"
 	monochrome: bool = False
+	numbering: str = "occurrence"
 	geometry: dict = field(default_factory=dict)
 
 	@property
@@ -76,8 +77,11 @@ def parse_row(row: dict[str, str], origin: str) -> FigureSpec:
 				geometry[key] = float(raw) if "." in raw else int(raw)
 			except ValueError:
 				raise StyleError("{}: figure {} has {}={!r}, not a number".format(origin, name, key, raw))
+	numbering = (row.get("numbering") or "occurrence").strip().lower()
+	if numbering not in ("occurrence", "appearance"):
+		raise StyleError("{}: figure {} has numbering {!r}; occurrence or appearance".format(origin, name, numbering))
 	return FigureSpec(name, layers, mode, _bool(row.get("tree", "")), _bool(row.get("numbers", "true")), palette,
-		_bool(row.get("monochrome", "")), geometry)
+		_bool(row.get("monochrome", "")), numbering, geometry)
 
 
 def read_table(path: Optional[Path]) -> list[FigureSpec]:
@@ -94,20 +98,37 @@ def read_table(path: Optional[Path]) -> list[FigureSpec]:
 
 
 class Colours:
-	def __init__(self, palette: str, overrides: Optional[dict[tuple[str, str], str]] = None, monochrome: bool = False):
+	def __init__(self, palette: str, overrides: Optional[dict[tuple[str, str], str]] = None, monochrome: bool = False,
+			numbering: str = "occurrence"):
 		self.palette = palettes.PALETTES[palette]
 		self.overrides = overrides or {}
 		self.monochrome = monochrome
+		self.numbering = numbering
 		self.assigned: dict[str, dict[str, str]] = {}
 
 	def assign(self, stage: str, annotations: list[Annotation]) -> dict[str, str]:
-		categories = []
+		categories, counts = [], {}
 		for a in annotations:
-			if a.category not in categories:
+			if a.category not in counts:
 				categories.append(a.category)
+			counts[a.category] = counts.get(a.category, 0) + 1
+		if self.numbering == "occurrence":
+			first = {c: i for i, c in enumerate(categories)}
+			categories = sorted(categories, key=lambda c: (-counts[c], first[c]))
+		parents, children = [], []
+		for c in categories:
+			(children if "/" in c else parents).append(c)
+		for c in children:
+			parent = c.split("/", 1)[0]
+			if parent not in parents:
+				parents.append(parent)
 		chooser = palettes.monochrome if (self.monochrome and stage.startswith("cluster")) else self.palette
-		colours = chooser(len(categories))
-		table = {c: self.overrides.get((stage, c), colours[i]) for i, c in enumerate(categories)}
+		colours = chooser(len(parents))
+		table = {c: self.overrides.get((stage, c), colours[i]) for i, c in enumerate(parents)}
+		for c in children:
+			parent, letter = c.split("/", 1)
+			step = max(0, ord(letter[0]) - ord("a"))
+			table[c] = self.overrides.get((stage, c), palettes.lighten(table[parent], min(0.22 * step, 0.7)))
 		self.assigned[stage] = table
 		return table
 

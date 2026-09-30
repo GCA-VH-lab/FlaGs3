@@ -11,7 +11,7 @@ signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --forma
 sismis	sismis run -g {in} -o {out}				
 trimal	trimal -in {in} -out {out} -fasta {mode}				
 veryfasttree	VeryFastTree {in}				
-jackhmmer				jackhmmer	iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16
-mmseqs_cluster	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 -s {sensitivity} -k {kmer} -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1			mmseqs	sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3
-mmseqs_cluster_exhaustive	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 --prefilter-mode 2 -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target -v 1			mmseqs	coverage=0.0;identity=0.0;evalue=1e-3
-nhmmer				nhmmer	incE=1e-3;chunk=100;chunks_per_worker=16
+jackhmmer				jackhmmer	iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16;subcov=0.6
+mmseqs_cluster	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 -s {sensitivity} -k {kmer} -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target,qcov,tcov -v 1			mmseqs	sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3;subcov=0.6
+mmseqs_cluster_exhaustive	mmseqs easy-search {in} {in} {out} {tmp} --num-iterations 1 --prefilter-mode 2 -c {coverage} --min-seq-id {identity} -e {evalue} --max-seqs {maxseqs} --threads {threads} --format-output query,target,qcov,tcov -v 1			mmseqs	coverage=0.0;identity=0.0;evalue=1e-3;subcov=0.6
+nhmmer				nhmmer	incE=1e-3;chunk=100;chunks_per_worker=16;subcov=0.6

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from flags3 import cluster, fasta
 from flags3.log import note
@@ -9,14 +10,36 @@ from flags3.tools import Tools
 
 class FamilyTables:
 	def __init__(self, families: list[list[str]], adjacency: dict[str, set],
-			occurrences: dict[str, int], queries: set[str], prefix: str, tool: str):
+			occurrences: dict[str, int], queries: set[str], prefix: str, tool: str,
+			full: Optional[dict[str, set]] = None, contains: Optional[dict[str, set]] = None):
 		self.families = families
 		self.adjacency = adjacency
+		self.full = full or {}
+		self.contains = contains or {}
 		self.occurrences = occurrences
 		self.queries = queries
 		self.prefix = prefix
 		self.tool = tool
 		self.labels = self._labels()
+		self.sub: dict[int, tuple[dict[str, str], list[list[str]]]] = {}
+		if self.full:
+			for i, fam in enumerate(self.families):
+				letters, groups = cluster.subfamilies(fam, self.full, self.contains)
+				if groups:
+					self.sub[i] = (letters, groups)
+
+	def member_label(self, index: int, accession: str) -> str:
+		base = self.labels.get(index, MISSING)
+		if base == MISSING or index not in self.sub:
+			return base
+		return base + self.sub[index][0].get(accession, "")
+
+	def member_category(self, index: int, accession: str) -> str:
+		if index in self.sub:
+			letter = self.sub[index][0].get(accession, "")
+			if len(letter) == 1 and letter != "?":
+				return "family:{}/{}".format(index + 1, letter)
+		return "family:{}".format(index + 1)
 
 	def _labels(self) -> dict[int, str]:
 		count = lambda fam: sum(self.occurrences.get(a, 0) for a in fam)
@@ -37,15 +60,24 @@ class FamilyTables:
 
 	def write(self, out: Path) -> None:
 		count = lambda fam: sum(self.occurrences.get(a, 0) for a in fam)
+		def sub_text(i):
+			if i not in self.sub:
+				return MISSING, MISSING
+			letters, groups = self.sub[i]
+			groups_text = ";".join("{}:{}".format(cluster.LETTERS[j % 26] * (j // 26 + 1), len(g)) for j, g in enumerate(groups))
+			bridges = ";".join("{}:{}".format(m, letters[m]) for m in sorted(letters) if len(letters[m]) > 1 or letters[m] == "?")
+			return groups_text, bridges or MISSING
+
 		Family.write(out / Family.FILE, (
-			Family(i + 1, self.labels.get(i, MISSING), len(fam), count(fam), ",".join(fam))
+			Family(i + 1, self.labels.get(i, MISSING), len(fam), count(fam), ",".join(fam), *sub_text(i))
 			for i, fam in enumerate(self.families)))
 		of = {a: i + 1 for i, fam in enumerate(self.families) for a in fam}
 		ClusterHit.write(out / ClusterHit.FILE, (
-			ClusterHit(a, of[a], ",".join(sorted(self.adjacency.get(a, ()))) or MISSING)
+			ClusterHit(a, of[a], ",".join(sorted(self.adjacency.get(a, ()))) or MISSING,
+				",".join(sorted(self.full.get(a, ()))) or MISSING)
 			for a in sorted(of)))
 		Annotation.write(out / Annotation.FILE, (
-			Annotation(a, MISSING, None, None, "fill", "family:{}".format(i + 1), self.labels[i], self.tool, None)
+			Annotation(a, MISSING, None, None, "fill", self.member_category(i, a), self.member_label(i, a), self.tool, None)
 			for i in sorted(self.labels) for a in self.families[i]))
 
 
@@ -70,19 +102,41 @@ class Cluster(Stage):
 	def run(self, run, config, out: Path) -> None:
 		tools = Tools.load(config.path("tools"))
 		name = config.text(self.method_key)
+		self.override(tools, name, config)
 		clusterer = cluster.build(tools, name, config.workers(), out / "raw")
 		sequences = self.sequences(run)
 		note("clustering {} sequences with {}".format(len(sequences), name))
 		families = clusterer.cluster(sequences)
 		adjacency = clusterer.adjacency
 		families, adjacency = self.extend(run, families, adjacency)
+		threshold = config.number("subfamily_coverage")
+		if threshold is None:
+			threshold = cluster.option(cluster.method(tools, name), "subcov", 0.0)
+		full = clusterer.full_length(threshold) if threshold > 0 else {}
+		contains = clusterer.contains(threshold) if threshold > 0 else {}
 		queries = {r.accession for r in RowInfo.read(run.stage_file("extract", RowInfo.FILE))}
-		tables = FamilyTables(families, adjacency, self.occurrences(run), queries, self.prefix, name)
+		tables = FamilyTables(families, adjacency, self.occurrences(run), queries, self.prefix, name, full, contains)
 		tables.write(out)
-		note("{} families, {} of them shared".format(len(families), len(tables.labels)))
+		split = [i for i in tables.sub if i in tables.labels]
+		note("{} families, {} of them shared{}".format(len(families), len(tables.labels),
+			", {} split into subfamilies at {:.0%} mutual coverage".format(len(split), threshold) if split else ""))
 
 	def extend(self, run, families, adjacency):
 		return families, adjacency
+
+	@staticmethod
+	def override(tools: Tools, name: str, config) -> None:
+		tool = cluster.method(tools, name)
+		hmmer = tool.engine in ("jackhmmer", "nhmmer")
+		if config.text("iterations"):
+			if hmmer:
+				tool.options["iterations"] = config.text("iterations")
+				note("{}: iterations = {} from the command line".format(name, config.text("iterations")))
+			else:
+				print("Warning: -n/--iterations has no meaning for {} ({}); ignored.".format(name, tool.engine))
+		if config.text("cluster_evalue"):
+			tool.options["incE" if hmmer else "evalue"] = config.text("cluster_evalue")
+			note("{}: E-value = {} from the command line".format(name, config.text("cluster_evalue")))
 
 
 class ClusterRna(Cluster):

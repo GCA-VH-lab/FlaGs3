@@ -221,8 +221,19 @@ line as each stage starts and finishes, more with `-vb`.
                 sequence are grouped by product name)
 ```
 
-Thresholds, iterations and sensitivity live in the tools table, not on the
-command line — see section 9.
+Thresholds, iterations and sensitivity live in the tools table (section 9);
+two of them can be overridden for a run:
+
+```
+-n 5            jackhmmer/nhmmer iterations (table default 3)
+-ce 1e-5        inclusion E-value for clustering hits (table default 1e-3)
+-sc 0.6         split a family into subfamilies where alignments cover this
+                fraction of both sequences; a fusion joining two subfamilies
+                is labelled with both letters (Q1ab); 0 switches it off
+```
+
+Subfamilies are drawn as lighter shades of the family colour and listed in
+`report/families.tsv` (`subfamilies`, `bridges`).
 
 ### Tree
 
@@ -268,7 +279,7 @@ command line — see section 9.
 -nf             no figures; draw later with flags3 figures
 -fh 16383       split a figure into parts above this height in pixels
 -no             classic style: leave the number out of a gene too small for it
--pdf            a PDF beside every SVG
+-pdf            a PDF beside every SVG; a figure split into SVG parts is one PDF
 -c 8            worker threads (default: all cores)
 --tools FILE    a tool table other than ~/.flags3/tools_table.tsv
 ```
@@ -316,10 +327,17 @@ own part, reading the options the run was made with, plus any you give:
 ```
 flags3 figures myrun -f figures.tsv        # redraw
 flags3 cluster myrun -cm mmseqs_cluster    # recluster, then: flags3 report myrun; flags3 figures myrun
+flags3 cluster myrun -cr                   # adds RNA clustering (runs cluster_rna too); for real RNA
+                                           # sequences do flags3 fetch myrun -cr && flags3 extract myrun first
 flags3 domains myrun -db defensefinder=~/.flags3/db/defensefinder/profiles -hc defensefinder=0.7,0.5
 flags3 extract myrun -g 8                  # then cluster, tree, domains …, report, figures
 flags3 tree myrun -iq
 ```
+
+A stage that needs files the run never fetched — the genome FASTA for
+`-ss`/`-gn` after a run without them, the RNA FASTA for `-cr` — gets them
+with `flags3 fetch myrun -gn` (or `-ss`, `-cr`), which downloads only what
+is missing into the genome directory; then run the stage.
 
 A flag the run had on can be switched off for the rerun with `--no-<option>`,
 e.g. `flags3 features myrun -lth --no-signalp` reruns only the local
@@ -338,7 +356,7 @@ rerun automatically; run them yourself in that order.
 | row_id | `query|assembly` |
 | offset | position relative to the query in the query's reading direction; negative is upstream |
 | accession | protein accession, or `pseudogene*` |
-| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton |
+| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab` |
 | strand | the gene's strand on the contig (the figure flips rows so the query points right) |
 | domains | domain names on the protein, in order, when `-d` was on |
 
@@ -377,7 +395,7 @@ outline, pseudogenes a blue one.
 | `domains` | domain wedges inside the genes, numbered; TM regions as red hatching, signal peptides as a black triangle; family numbers prefixed `G` so they don't clash with domain numbers |
 | `sismis`, `genomad`, `defence` | genes in grey, the called systems as coloured bands under the row with codes `S1`, `M1`, `D1` |
 | `all-in-one` | everything, one band lane per tool |
-| `classic`, `tree_classic` | the original FlaGs look |
+| `classic` | the original FlaGs look; add a row with `tree` set to `1` for a classic tree figure |
 
 A figure is drawn only when a stage it shows produced something. Every
 figure has a legend panel per layer; a domain panel can be long.
@@ -403,7 +421,8 @@ Columns:
 | numbers | `true` to label genes with their family |
 | palette | `bright`, `pastel`, `classic`, `colourblind`, `monochrome` |
 | monochrome | `true` to grey the gene fills so bands stand out |
-| font_size, row_height, gene_height, bases_per_pixel, pad, domain_height, label_step, arrow_head, min_gene_width, band_opacity, tree_width | geometry; empty means the mode's default |
+| numbering | `occurrence` (default): domain and band codes numbered by how often they occur; `appearance`: by first appearance |
+| font_size, row_height, gene_height, bases_per_pixel, pad, domain_height, label_step, arrow_head, min_gene_width, band_opacity, band_margin, tree_width | geometry; empty means the mode's default |
 
 To pin single colours, put a `colours.tsv` in the run directory:
 

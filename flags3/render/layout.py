@@ -69,7 +69,8 @@ class Layout:
 		return self.pad + self.rows.index(row) * self.row_pitch + self.row_h / 2
 
 	def band_box(self, row: str) -> tuple[float, float]:
-		return self.y(row) - self.gene_h / 2 - 3, self.gene_h + 6
+		margin = self.spec.value("band_margin")
+		return self.y(row) - self.gene_h / 2 - margin, self.gene_h + 2 * margin
 
 	def x(self, row: str, bp: int) -> float:
 		if self.reversed[row]:

@@ -31,6 +31,8 @@ class Features(Stage):
 		return config.flag("tmhmm") or config.flag("signalp")
 
 	def run(self, run, config, out: Path) -> None:
+		if not self.wanted(config):
+			raise RuntimeError("nothing requested: -th for transmembrane regions, -sp for signal peptides")
 		tools = Tools.load(config.path("tools"))
 		sequences = {n: s for n, _, s in fasta.read(run.stage_file("extract", "proteins.faa"))}
 		scanners: list[tuple[str, object]] = []

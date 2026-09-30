@@ -137,3 +137,22 @@ def test_figures_stage(tmp_path):
 	runner.config = cfg
 	assert runner.execute(Figures())
 	assert sorted(p.name for p in run.stage_dir("figures").glob("*.svg")) == ["mine.svg"]
+
+
+def test_occurrence_numbering():
+	ann = [Annotation("a", "-", None, None, "fill", "rare", "r", "t", None)] + [
+		Annotation("b{}".format(i), "-", None, None, "fill", "common", "c", "t", None) for i in range(3)]
+	assert list(Colours("bright").assign("x", ann)) == ["common", "rare"]
+	assert list(Colours("bright", numbering="appearance").assign("x", ann)) == ["rare", "common"]
+
+
+def test_subfamily_shades():
+	from flags3.render import palettes
+	ann = [Annotation("a", "-", None, None, "fill", "family:1/a", "1a", "t", None),
+		Annotation("b", "-", None, None, "fill", "family:1/b", "1b", "t", None),
+		Annotation("f", "-", None, None, "fill", "family:1", "1ab", "t", None),
+		Annotation("c", "-", None, None, "fill", "family:2", "2", "t", None)]
+	table = Colours("bright").assign("cluster", ann)
+	assert table["family:1/a"] == table["family:1"]
+	assert table["family:1/b"] == palettes.lighten(table["family:1"], 0.22)
+	assert table["family:2"] != table["family:1"]

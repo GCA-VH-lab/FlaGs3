@@ -34,6 +34,9 @@ RUN_OPTIONS = (
 	(("-lf", "--local_first"), dict(action="store_true", help="Look bare queries up in the genome directory's protein files before asking IPG, so your own assemblies and NCBI queries can share one list")),
 	(("--no_cache",), dict(action="store_true", help="Neither read nor fill the genome cache: genomes are downloaded into <run>/genomes/ and live with the run")),
 	(("-cm", "--cluster_method"), dict(default="jackhmmer", metavar="NAME", help="Row of the tools table that finds homologous flanking proteins. Default = jackhmmer")),
+	(("-n", "--iterations"), dict(type=int, help="jackhmmer/nhmmer iterations for this run, overriding the tools table")),
+	(("-ce", "--cluster_evalue"), dict(type=float, help="Inclusion E-value for clustering hits, overriding the tools table (jackhmmer, nhmmer, mmseqs)")),
+	(("-sc", "--subfamily_coverage"), dict(type=float, metavar="FRACTION", help="Split a family into subfamilies of full-length homologues: an edge counts when the alignment covers this fraction of both sequences. Default from the tools table (0.6); 0 switches it off")),
 	(("-cr", "--cluster_rna"), dict(action="store_true", help="Cluster flanking RNA genes too, with the rna_method row (nhmmer); RNAs without a sequence are grouped by product name")),
 	(("--rna_method",), dict(default="nhmmer", metavar="NAME", help="Row of the tools table used for RNA clustering. Default = nhmmer")),
 	(("-t", "--tree"), dict(action="store_true", help="Build a phylogenetic tree of the query proteins (mafft, trimal, VeryFastTree)")),
@@ -157,12 +160,7 @@ def _run(args) -> int:
 	config.set("blast_inline", inline)
 	if args.no_cache:
 		args.genomes = str(run.path / "genomes")
-	if args.local_tmhmm:
-		args.tmhmm = True
-	if args.local_signalp:
-		args.signalp = True
-	if args.iqtree or args.tree_order:
-		args.tree = True
+	_imply(args)
 	for flags, _ in RUN_OPTIONS:
 		key = flags[-1].lstrip("-")
 		config.set(key, _resolved(key, getattr(args, key)))
@@ -178,12 +176,29 @@ def _run(args) -> int:
 def _stage(args) -> int:
 	run = RunDir(args.run_dir).require()
 	config = run.config()
+	_imply(args)
 	for flags, _ in RUN_OPTIONS:
 		key = flags[-1].lstrip("-")
 		value = getattr(args, key)
 		if value is not None:
 			config.set(key, _resolved(key, value))
-	return 0 if Runner(run, config).execute(BY_NAME[args.command]()) else 1
+	config.set("fetch.slots", sorted({slot for stage in PIPELINE if stage().wanted(config) for slot in stage.needs}))
+	runner = Runner(run, config)
+	stages = [BY_NAME[args.command]()]
+	for companion in COMPANIONS.get(args.command, ()):
+		if BY_NAME[companion]().wanted(config):
+			stages.append(BY_NAME[companion]())
+	return 0 if all(runner.execute(stage) for stage in stages) else 1
+
+
+COMPANIONS = {"cluster": ("cluster_rna",)}
+IMPLIES = (("local_tmhmm", "tmhmm"), ("local_signalp", "signalp"), ("iqtree", "tree"), ("tree_order", "tree"))
+
+
+def _imply(args):
+	for given, implied in IMPLIES:
+		if getattr(args, given, None):
+			setattr(args, implied, True)
 
 
 PATH_KEYS = ("genomes", "tools", "clans", "interpro", "genomad_db", "figures", "blast_input")

@@ -472,7 +472,10 @@ carries a tree, else input order (extract keeps input order).
 `render/layers.py`: `draw_genes` (the arrows, filled from the cluster
 layer's `fill` annotations or grey), `draw_bands` (`band`: a hatched
 rectangle across the called span drawn behind the genes, 5 px strokes with
-5 px gaps in the category colour; each band stage hatches at its own angle
+5 px gaps in the category colour, written as plain `<line>` elements
+inside a clip path rather than as an SVG `<pattern>`, because cairosvg
+rasterises patterns into a washed-out tile in PDFs while every renderer
+draws clipped lines the same way; each band stage hatches at its own angle
 — sismis 45°, genomad −45°, defence horizontal — so overlapping calls
 cross rather than hide each other, and the row height does not grow with
 the number of tools; the band codes `S1`, `M1`, `D1` of a row are written
@@ -503,8 +506,9 @@ to draw), `mode` (versatile or classic), `tree`, `numbers`, `palette`
 fills only, so bands stand out), and geometry columns that fall back to the
 mode's defaults. A figure is drawn when any of its non-cluster layers has
 data; a legend panel lists only the categories that figure (or part)
-actually drew. `Colours` assigns each stage's categories from the palette in order of
-first appearance; the `bright` and `pastel` palettes step the hue by the
+actually drew. `Colours` assigns each stage's categories — and so the codes `1, 2, …`,
+`S1, S2, …` — in order of occurrence count by default (`numbering =
+occurrence`; `appearance` restores first-seen order); the `bright` and `pastel` palettes step the hue by the
 golden angle rather than sweeping it, so categories numbered next to each
 other — which on a domain figure are usually neighbours on the same gene —
 get hues far apart, and after seven entries the value drops so the second
@@ -517,8 +521,16 @@ also draws domains, plain numbers get a `G` prefix so they don't collide
 with the domain codes. Domains are numbered per category and listed in the
 Domains legend panel; bands carry `S1`, `M1`, `D1` codes with their panels.
 
-Figures taller than `-fh` are split by rows into parts; a figure with a
-tree panel is never split. `--pdf` converts with cairosvg (an optional
+Figures taller than `-fh` are split by rows into SVG parts; a figure with a
+tree panel is never split. The PDF of a split figure is one file rendered
+from the whole figure, since PDF has no height limit — the limit is the
+browser's.
+
+A band is drawn behind its genes with a margin (`band_margin`, 6 px) above
+and below the arrow. That margin is all that is visible of a system that
+spans exactly its genes, so it is deliberately wider than the gene outline;
+a legend entry with no visible band on the page means the band lies
+entirely under a gene, not that it failed to render. `--pdf` converts with cairosvg (an optional
 extra); the three other converters 2.3.0 tried are gone.
 
 ## Report
@@ -578,3 +590,48 @@ cores. CPU-bound stages are not run concurrently with each other on
 purpose: each already takes all cores, and running two at once would only
 add memory pressure. Rerunning a single stage from the command line is
 always synchronous.
+
+## Subfamilies
+
+A family is a connected component of "these two align", which is the
+sensitive answer and also the one a fusion protein can lie to: one protein
+carrying a ThiF domain and a UvrA/ABC pair joins two unrelated families
+into one. Rather than cut the graph by shape (articulation points) or by a
+community model (Louvain), the cluster stage uses a fact every hit already
+carries — how much of each sequence the alignment covers — and asks the
+same question twice at two strictnesses.
+
+- The **family** is unchanged: any hit is an edge.
+- A **core group** is a connected component of the full-length graph inside
+  the family: an edge counts only when the alignment covers at least
+  `subcov` (tools-table option, default 0.6; `-sc` overrides, `0` switches
+  the whole thing off) of *both* sequences. Groups of one are not cores.
+- A core group whose every member is **contained** in at least half of
+  another group's members (the alignment covers ≥ `subcov` of the smaller
+  protein) is folded into that group: fragments and truncations join what
+  they are fragments of instead of forming a group of their own.
+- A family with two or more cores after folding is split. Cores are
+  lettered by size (`a`, `b`, …); a member's label is its family label plus
+  its letters: its own core, plus every other core it *contains* a member
+  of — unless 95% or more of its core-mates hold that core too, in which
+  case the held group is a fragment of what the whole core shares and the
+  letter would say nothing — plus, for a protein in no core, every core
+  that contains it. A held core that partitions the holder's core is kept
+  on purpose: in the run that raised it, `Q1af` (136) against `Q1a` (18)
+  turned out to be ThiF proteins with and without a ~110-residue
+  N-terminal extension, which the Pfam scan alone does not show. A
+  ThiF–UvrA fusion is therefore `Q1ab`: full-length with the UvrA core and
+  holding whole ThiF proteins. A protein with no letters at all is `?` in
+  `families.tsv` and keeps the plain family label.
+
+`families.tsv` gains `subfamilies` (`a:29;b:16`) and `bridges`
+(`WP_260604591.1:ab`); `hits.tsv` gains `full_hits`. Annotations carry
+`category = family:1/a` for core members and `family:1` for bridges, and
+the renderer draws subfamilies as luminance steps of the family colour
+(`a` the colour, `b` lighter, `c` lighter still), so a figure still reads
+"all G1" from a distance and "two kinds" up close.
+
+Verified on the collaborators' run that raised it: family Q1 (232 members,
+one fusion) comes out as `a` = 158 ThiF proteins plus 3 fragments, `b` =
+the 50 UvrA/ABC proteins plus the 20 unannotated ones, and `WP_260604591.1`
+as `Q1ab`; the 46-protein subset gives `a:29`, `b:16`, `Q1ab`.

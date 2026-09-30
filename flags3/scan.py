@@ -75,8 +75,10 @@ class WindowScan(Stage):
 			else:
 				usable[assembly] = path
 		if missing:
-			print("Warning: {} has no genome FASTA for {} assemblies; they are not scanned.".format(
-				self.name, len(missing)))
+			print("Warning: {} has no genome FASTA for {} assemblies; they are not scanned. "
+				"flags3 fetch <run> --{} downloads them.".format(self.name, len(missing), self.name))
+		if not usable:
+			raise ScanError("no genome FASTA for any assembly; run flags3 fetch <run> --{} first".format(self.name))
 		cuts = windows.merge([w for w in rows if w.assembly in usable])
 		batches = windows.Batches(out / "raw")
 		paths = batches.write(usable, cuts)

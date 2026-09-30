@@ -48,7 +48,7 @@ def test_palettes_and_table():
 	assert palettes.monochrome(2) == [palettes.GREY, palettes.GREY]
 	specs = {s.name: s for s in read_table(None)}
 	assert specs["sismis"].monochrome and specs["sismis"].palette == "bright"
-	assert specs["classic"].classic and specs["tree"].tree
+	assert specs["classic"].classic and specs["tree"].tree and specs["tree"].classic
 	assert specs["classic"].value("gene_height") == 15 and specs["neighbors"].value("gene_height") == 8
 	with pytest.raises(StyleError):
 		parse_row({"name": "x", "layers": "cluster", "palette": "neon"}, "t")

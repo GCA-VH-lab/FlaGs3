@@ -391,7 +391,7 @@ outline, pseudogenes a blue one.
 | figure | what it shows |
 |---|---|
 | `neighbors` | the neighbourhoods |
-| `tree` | the same, aligned to the tree of the queries, with bootstrap values in red |
+| `tree` | the neighbourhoods aligned to the tree of the queries, bootstrap values in red, in the classic look |
 | `domains` | domain wedges inside the genes, numbered; TM regions as red hatching, signal peptides as a black triangle; family numbers prefixed `G` so they don't clash with domain numbers |
 | `sismis`, `genomad`, `defence` | genes in grey, the called systems as coloured bands under the row with codes `S1`, `M1`, `D1` |
 | `all-in-one` | everything, one band lane per tool |

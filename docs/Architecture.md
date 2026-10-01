@@ -659,3 +659,17 @@ Verified on the collaborators' run that raised it: family Q1 (232 members,
 one fusion) comes out as `a` = 158 ThiF proteins plus 3 fragments, `b` =
 the 50 UvrA/ABC proteins plus the 20 unannotated ones, and `WP_260604591.1`
 as `Q1ab`; the 46-protein subset gives `a:29`, `b:16`, `Q1ab`.
+
+### The user tools table holds locations, not settings
+
+Until 3.0.0rc1 `flags3 install` copied every row of the shipped table into
+`~/.flags3/tools_table.tsv`, search options included, so a shipped default
+changed later never reached a machine that had installed before — the
+jackhmmer thresholds stayed at 1e-3 for one user after they had become
+1e-10 in the package, and a 2,571-member family chained through 17 edges in
+exactly that band was the symptom. The user table is now a table of
+overrides: `write` emits only columns that differ from the shipped table, and
+when the installer writes it, only tool commands, directories and the
+options the installer itself sets (`db=`); any other option found there is
+dropped with a note. Search settings therefore come from the shipped table,
+from `-n`/`-ce`/`-sc`, or from a hand edit made after the last install.

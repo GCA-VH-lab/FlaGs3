@@ -542,7 +542,7 @@ class Installer:
 					continue
 			else:
 				component.install(sources.get(name))
-			self.tools.write(home.USER_TOOLS_TABLE)
+			self.tools.write(home.USER_TOOLS_TABLE, installer=True)
 			say("done; tools table at {}".format(home.USER_TOOLS_TABLE))
 
 

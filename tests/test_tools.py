@@ -51,3 +51,22 @@ def test_shipped_template_survives_user_override(tmp_path):
 	assert tools["deeptmhmm"].command.startswith("/old/python")
 	assert tools.template("deeptmhmm") == "{fasta} {out} --simplify-io"
 	assert tools.template("mafft").startswith("--auto")
+
+
+def test_user_table_holds_only_overrides(tmp_path):
+	tools = Tools.load()
+	tools["mafft"].command = "/opt/bin/mafft --auto {in}"
+	tools.write(tmp_path / "t.tsv")
+	text = (tmp_path / "t.tsv").read_text()
+	assert "mafft" in text and "jackhmmer" not in text and "incE" not in text
+	again = Tools.load(tmp_path / "t.tsv")
+	assert again["mafft"].command == "/opt/bin/mafft --auto {in}"
+	assert again["jackhmmer"].options["incE"] == "1e-10"
+	stale = tmp_path / "stale.tsv"
+	stale.write_text("#name\tcommand\tdirectory\tscan_range\tengine\toptions\njackhmmer\t\t\t\tjackhmmer\titerations=3;incE=1e-3\ngenomad\t/x/genomad end-to-end\t\t\t\tdb=/db\n")
+	tools = Tools.load(stale)
+	assert tools["jackhmmer"].options["incE"] == "1e-3"
+	tools.write(stale, installer=True)
+	tools = Tools.load(stale)
+	assert tools["jackhmmer"].options["incE"] == "1e-10" and tools["genomad"].options["db"] == "/db"
+	assert tools["genomad"].command == "/x/genomad end-to-end"

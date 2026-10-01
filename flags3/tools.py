@@ -31,7 +31,7 @@ class Tool:
 		if row.get("engine"):
 			self.engine = row["engine"]
 		if row.get("options"):
-			self.options = self.parse_options(row["options"])
+			self.options.update(self.parse_options(row["options"]))
 		span = row.get("scan_range", "")
 		if span:
 			if span.lower() == "genome":
@@ -104,6 +104,9 @@ class Tools:
 		self.tools: dict[str, Tool] = {}
 		self.origins: list[str] = []
 		self.shipped: dict[str, str] = {}
+		self.shipped_command: dict[str, str] = {}
+		self.shipped_directory: dict[str, str] = {}
+		self.shipped_options: dict[str, str] = {}
 
 	@classmethod
 	def load(cls, user_table: Optional[Path] = None) -> "Tools":
@@ -111,6 +114,9 @@ class Tools:
 		with resources.as_file(resources.files("flags3.data") / TABLE_NAME) as shipped:
 			tools.read(shipped, allow_new=True)
 		tools.shipped = {name: tool.command for name, tool in tools.tools.items()}
+		tools.shipped_command = dict(tools.shipped)
+		tools.shipped_directory = {name: tool.directory for name, tool in tools.tools.items()}
+		tools.shipped_options = {name: ";".join("{}={}".format(k, v) for k, v in tool.options.items()) for name, tool in tools.tools.items()}
 		if user_table is not None:
 			if not Path(user_table).is_file():
 				raise ToolError("tool table not found: {}".format(user_table))
@@ -152,14 +158,31 @@ class Tools:
 			return sorted(self.tools)
 		return sorted(n for n, t in self.tools.items() if t.engine)
 
-	def write(self, path: Path) -> None:
+	INSTALLER_OPTIONS = ("db",)
+
+	def write(self, path: Path, installer: bool = False) -> None:
+		dropped = []
 		with open(path, "w", encoding="utf-8") as out:
+			out.write("## Rows here override the table shipped with FlaGs3; a column left empty keeps the shipped value.\n")
 			out.write("#" + "\t".join(COLUMNS) + "\n")
 			for name in sorted(self.tools):
 				t = self.tools[name]
-				span = "" if t.scan_range is None else ("genome" if t.scan_range == 0 else str(t.scan_range))
-				options = ";".join("{}={}".format(k, v) for k, v in t.options.items())
-				out.write("\t".join((name, t.command, t.directory, span, t.engine, options)) + "\n")
+				command = t.command if t.command != self.shipped_command.get(name, "") else ""
+				directory = t.directory if t.directory != self.shipped_directory.get(name, "") else ""
+				shipped = dict(Tool.parse_options(self.shipped_options.get(name, "")))
+				kept = {k: v for k, v in t.options.items() if shipped.get(k) != v}
+				if installer:
+					for key in list(kept):
+						if key not in self.INSTALLER_OPTIONS:
+							dropped.append("{}:{}".format(name, key))
+							kept.pop(key)
+				options = ";".join("{}={}".format(k, v) for k, v in kept.items())
+				if not (command or directory or options):
+					continue
+				out.write("\t".join((name, command, directory, "", "", options)) + "\n")
+		if dropped:
+			print("Note: the user tools table now holds only tool locations; search options reset to the shipped defaults ({}). "
+				"Use -n, -ce, -sc, or edit {} after installing.".format(", ".join(dropped), path))
 
 
 def brief(text, lines: int = 3, limit: int = 300) -> str:

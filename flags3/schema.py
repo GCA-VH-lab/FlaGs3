@@ -121,6 +121,7 @@ class Gene(Row):
 	product: str
 	is_rna: bool
 	offset: int
+	contig_edge: bool
 
 	def __post_init__(self):
 		if self.strand not in STRANDS:

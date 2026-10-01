@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from flags3.schema import Annotation, Gene, RowInfo, Window
-from flags3.stages.tree import Leaf
 
 
 @dataclass
@@ -27,6 +26,7 @@ class RunData:
 		order = [r for r in rows if r in genes]
 		tree_order, newick = [], ""
 		if run.has("tree"):
+			from flags3.stages.tree import Leaf
 			tree_order = [l.row_id for l in Leaf.read(run.stage_file("tree", Leaf.FILE)) if l.row_id in genes]
 			newick = run.stage_file("tree", "tree.nwk").read_text().strip()
 		annotations = {}

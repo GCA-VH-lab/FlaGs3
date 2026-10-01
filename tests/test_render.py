@@ -156,3 +156,21 @@ def test_subfamily_shades():
 	assert table["family:1/a"] == table["family:1"]
 	assert table["family:1/b"] == palettes.lighten(table["family:1"], 0.22)
 	assert table["family:2"] != table["family:1"]
+
+
+def test_companion_files(tmp_path):
+	run, runner = _run(tmp_path)
+	_fake_stage(run, "domains", [Annotation("WP_004", "aa", 10, 100, "wedge", "PF1", "Dom_1", "pfam", 1e-5)])
+	_fake_stage(run, "defence", [Annotation("GCF_TEST|A", "bp", 2000, 3500, "band", "RM", "RM_Type_I", "padloc", None)])
+	assert runner.execute(Figures())
+	legend = run.stage_file("figures", "legend.tsv").read_text().splitlines()
+	assert legend[0] == "stage\tcode\tname\toccurrences"
+	assert "domains\t1\tPF1 (Dom_1)\t1" in legend and "defence\tD1\tRM (RM_Type_I)\t1" in legend
+	systems = run.stage_file("figures", "systems.tsv").read_text().splitlines()
+	assert systems[0].startswith("stage\tcode\tsystem")
+	line = systems[1].split("\t")
+	assert line[:3] == ["defence", "D1", "RM_Type_I"] and "WP_004(" in line[8] and "WP_005(" in line[8]
+	from flags3.render.companions import figure_label
+	assert figure_label("5") == "G5" and figure_label("12a") == "G12a" and figure_label("Q1ab") == "Q1ab" and figure_label("-") == "-"
+	assert "WP_004|GCF_TEST" in line[7] and "query protein" in line[9]
+	assert run.stage_file("figures", "families_legend.txt").exists()

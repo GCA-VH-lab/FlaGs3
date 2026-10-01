@@ -2,6 +2,7 @@ from pathlib import Path
 
 from flags3.log import note
 from flags3.render import pdf
+from flags3.render.companions import Companions
 from flags3.render.data import RunData
 from flags3.render.figure import Figure, parts_for
 from flags3.render.style import Colours, read_overrides, read_table
@@ -51,6 +52,7 @@ class Figures(Stage):
 					whole.write_text(Figure(data, spec, Colours(spec.palette, overrides, spec.monochrome, spec.numbering),
 						no_overlaps=config.flag("no_overlaps")).render())
 					pdf.convert(whole, out / (spec.name + ".pdf"))
-		note("{} figures written".format(len(written)))
+		companions = Companions(data, specs[0].numbering if specs else "occurrence").write_all(out)
+		note("{} figures written, with {}".format(len(written), ", ".join(p.name for p in companions)))
 		if not written:
 			raise RuntimeError("no figure had anything to draw")

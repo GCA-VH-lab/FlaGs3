@@ -521,6 +521,16 @@ also draws domains, plain numbers get a `G` prefix so they don't collide
 with the domain codes. Domains are numbered per category and listed in the
 Domains legend panel; bands carry `S1`, `M1`, `D1` codes with their panels.
 
+Beside the figures, `figures/` gets three companion files written by the
+same stage from the same data: `legend.tsv` (stage, code, name,
+occurrences — every domain and band code used across the run's figures),
+`families_legend.txt` (the `_outdesc` layout: label(occurrences), accession,
+product per family, with subfamily letters), and `systems.tsv` (one line
+per drawn band: stage, code, system name, assembly, contig, span, the rows
+it overlaps, the genes inside it as `accession(label)`, and their
+products). Codes there are assigned over the whole run with the first
+figure's numbering, so they match what the figures show.
+
 Figures taller than `-fh` are split by rows into SVG parts; a figure with a
 tree panel is never split. The PDF of a split figure is one file rendered
 from the whole figure, since PDF has no height limit — the limit is the
@@ -623,6 +633,12 @@ same question twice at two strictnesses.
   ThiF–UvrA fusion is therefore `Q1ab`: full-length with the UvrA core and
   holding whole ThiF proteins. A protein with no letters at all is `?` in
   `families.tsv` and keeps the plain family label.
+
+A protein at the end of a contig — every one of its occurrences in the run
+is the first or last gene of its contig (`contig_edge` in `genes.tsv`) —
+may be incomplete, so in a split family it is labelled `?` regardless of
+its alignments; it still helps form the cores. A protein seen mid-contig
+anywhere is complete and is labelled normally.
 
 `families.tsv` gains `subfamilies` (`a:29;b:16`) and `bridges`
 (`WP_260604591.1:ab`); `hits.tsv` gains `full_hits`. Annotations carry

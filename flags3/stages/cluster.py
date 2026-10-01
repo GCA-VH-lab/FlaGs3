@@ -11,11 +11,13 @@ from flags3.tools import Tools
 class FamilyTables:
 	def __init__(self, families: list[list[str]], adjacency: dict[str, set],
 			occurrences: dict[str, int], queries: set[str], prefix: str, tool: str,
-			full: Optional[dict[str, set]] = None, contains: Optional[dict[str, set]] = None):
+			full: Optional[dict[str, set]] = None, contains: Optional[dict[str, set]] = None,
+			edge: Optional[set] = None):
 		self.families = families
 		self.adjacency = adjacency
 		self.full = full or {}
 		self.contains = contains or {}
+		self.edge = edge or set()
 		self.occurrences = occurrences
 		self.queries = queries
 		self.prefix = prefix
@@ -28,17 +30,23 @@ class FamilyTables:
 				if groups:
 					self.sub[i] = (letters, groups)
 
+	def letters(self, index: int, accession: str) -> str:
+		if index not in self.sub:
+			return ""
+		if accession in self.edge:
+			return "?"
+		return self.sub[index][0].get(accession, "")
+
 	def member_label(self, index: int, accession: str) -> str:
 		base = self.labels.get(index, MISSING)
-		if base == MISSING or index not in self.sub:
+		if base == MISSING:
 			return base
-		return base + self.sub[index][0].get(accession, "")
+		return base + self.letters(index, accession)
 
 	def member_category(self, index: int, accession: str) -> str:
-		if index in self.sub:
-			letter = self.sub[index][0].get(accession, "")
-			if len(letter) == 1 and letter != "?":
-				return "family:{}/{}".format(index + 1, letter)
+		letter = self.letters(index, accession)
+		if len(letter) == 1 and letter != "?":
+			return "family:{}/{}".format(index + 1, letter)
 		return "family:{}".format(index + 1)
 
 	def _labels(self) -> dict[int, str]:
@@ -65,7 +73,8 @@ class FamilyTables:
 				return MISSING, MISSING
 			letters, groups = self.sub[i]
 			groups_text = ";".join("{}:{}".format(cluster.LETTERS[j % 26] * (j // 26 + 1), len(g)) for j, g in enumerate(groups))
-			bridges = ";".join("{}:{}".format(m, letters[m]) for m in sorted(letters) if len(letters[m]) > 1 or letters[m] == "?")
+			bridges = ";".join("{}:{}".format(m, self.letters(i, m)) for m in sorted(letters)
+				if len(self.letters(i, m)) > 1 or self.letters(i, m) == "?")
 			return groups_text, bridges or MISSING
 
 		Family.write(out / Family.FILE, (
@@ -97,6 +106,16 @@ class Cluster(Stage):
 				counts[g.accession] = counts.get(g.accession, 0) + 1
 		return counts
 
+	def edge_accessions(self, run) -> set:
+		seen_inside, seen = set(), set()
+		for g in Gene.iterate(run.stage_file("extract", Gene.FILE)):
+			if g.is_rna != self.rna:
+				continue
+			seen.add(g.accession)
+			if not g.contig_edge:
+				seen_inside.add(g.accession)
+		return seen - seen_inside
+
 	rna = False
 
 	def run(self, run, config, out: Path) -> None:
@@ -115,7 +134,8 @@ class Cluster(Stage):
 		full = clusterer.full_length(threshold) if threshold > 0 else {}
 		contains = clusterer.contains(threshold) if threshold > 0 else {}
 		queries = {r.accession for r in RowInfo.read(run.stage_file("extract", RowInfo.FILE))}
-		tables = FamilyTables(families, adjacency, self.occurrences(run), queries, self.prefix, name, full, contains)
+		tables = FamilyTables(families, adjacency, self.occurrences(run), queries, self.prefix, name, full, contains,
+			self.edge_accessions(run))
 		tables.write(out)
 		split = [i for i in tables.sub if i in tables.labels]
 		note("{} families, {} of them shared{}".format(len(families), len(tables.labels),

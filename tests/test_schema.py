@@ -6,8 +6,8 @@ from flags3.schema import (Annotation, Gene, SchemaError, Window, bp_subject,
 
 def test_gene_round_trip(tmp_path):
 	genes = [
-		Gene("WP_1|GCF_1", "GCF_1", "NZ_1", "WP_1", 100, 400, "+", "hypothetical protein", False, 0),
-		Gene("WP_1|GCF_1", "GCF_1", "NZ_1", "rna_1", 500, 580, "-", "tRNA-Ala", True, 1),
+		Gene("WP_1|GCF_1", "GCF_1", "NZ_1", "WP_1", 100, 400, "+", "hypothetical protein", False, 0, False),
+		Gene("WP_1|GCF_1", "GCF_1", "NZ_1", "rna_1", 500, 580, "-", "tRNA-Ala", True, 1, False),
 	]
 	path = tmp_path / Gene.FILE
 	assert Gene.write(path, genes) == 2
@@ -17,9 +17,9 @@ def test_gene_round_trip(tmp_path):
 
 def test_gene_validation():
 	with pytest.raises(SchemaError):
-		Gene("r", "a", "c", "x", 10, 5, "+", "p", False, 0)
+		Gene("r", "a", "c", "x", 10, 5, "+", "p", False, 0, False)
 	with pytest.raises(SchemaError):
-		Gene("r", "a", "c", "x", 1, 5, "?", "p", False, 0)
+		Gene("r", "a", "c", "x", 1, 5, "?", "p", False, 0, False)
 
 
 def test_window_nesting():

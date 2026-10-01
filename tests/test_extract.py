@@ -101,3 +101,10 @@ def test_rerun_overwrites(tmp_path):
 	cfg.save()
 	Runner(run, cfg, report=lambda m: None).execute(Extract())
 	assert len(_genes(run)) == 7
+
+
+def test_contig_edge_flag(tmp_path):
+	run = _run(tmp_path, ["WP_009", "WP_001"], gene=4)
+	genes = {(g.row_id, g.accession): g for g in _genes(run)}
+	assert genes[("WP_009|GCF_TEST", "WP_008")].contig_edge and genes[("WP_009|GCF_TEST", "WP_009")].contig_edge
+	assert genes[("WP_001|GCF_TEST", "WP_001")].contig_edge and not genes[("WP_001|GCF_TEST", "WP_002")].contig_edge

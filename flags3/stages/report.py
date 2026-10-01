@@ -33,6 +33,7 @@ class NeighbourhoodRow(Row):
 	is_rna: bool
 	product: str
 	domains: str
+	contig_edge: bool
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,7 @@ class Report(Stage):
 			for g in genes:
 				rows.append(NeighbourhoodRow(row_id, query, assembly, t.species(row_id) or MISSING, g.offset, g.accession,
 					t.family(g.accession), g.contig, g.start, g.end, g.strand, g.end - g.start + 1, g.is_rna,
-					g.product, ";".join(t.domains.get(g.accession, [])) or MISSING))
+					g.product, ";".join(t.domains.get(g.accession, [])) or MISSING, g.contig_edge))
 		NeighbourhoodRow.write(out / NeighbourhoodRow.FILE, rows)
 
 	def queries(self, t: RunTables, out: Path) -> None:

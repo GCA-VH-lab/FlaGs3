@@ -356,7 +356,8 @@ rerun automatically; run them yourself in that order.
 | row_id | `query|assembly` |
 | offset | position relative to the query in the query's reading direction; negative is upstream |
 | accession | protein accession, or `pseudogene*` |
-| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab` |
+| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab`; a protein only ever seen at the end of a contig gets `Q1?`, since it may be incomplete |
+| contig_edge | `true` when the gene is the first or last on its contig |
 | strand | the gene's strand on the contig (the figure flips rows so the query points right) |
 | domains | domain names on the protein, in order, when `-d` was on |
 
@@ -399,6 +400,12 @@ outline, pseudogenes a blue one.
 
 A figure is drawn only when a stage it shows produced something. Every
 figure has a legend panel per layer; a domain panel can be long.
+
+Three files sit beside the figures: `legend.tsv` (every domain and band
+code with its name), `families_legend.txt` (each family's members with
+their labels and products, the old `_outdesc` layout), and `systems.tsv`
+(each drawn defence, secretion or mobile-element system with the genes
+inside it and the families they belong to).
 
 ## 8. Your own figures
 

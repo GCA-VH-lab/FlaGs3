@@ -172,3 +172,23 @@ def test_held_core_lends_its_letter_only_when_it_partitions():
 		contains[m].add("s1")
 	labels, _ = cluster.subfamilies(members, full, contains)
 	assert all(labels[m] == "a" for m in full_a)
+
+
+def test_contig_edge_proteins_get_question_mark(tmp_path):
+	thif = ["t1", "t2", "t3", "t4"]
+	uvra = ["u1", "u2"]
+	members = thif + uvra
+	full = {m: set() for m in members}
+	for g in (thif, uvra):
+		for m in g:
+			full[m] |= set(g) - {m}
+	contains = {m: set() for m in members}
+	tables = FamilyTables([members], {m: set() for m in members}, {m: 2 for m in members}, {"t1"}, "", "jackhmmer",
+		full, contains, edge={"t4"})
+	assert tables.member_label(0, "t3") == "Q1a" and tables.member_label(0, "t4") == "Q1?"
+	assert tables.member_category(0, "t4") == "family:1" and tables.member_category(0, "t3") == "family:1/a"
+	tables.write(tmp_path)
+	fam = Family.read(tmp_path / Family.FILE)[0]
+	assert fam.bridges == "t4:?"
+	plain = FamilyTables([thif], {m: set() for m in thif}, {m: 2 for m in thif}, {"t1"}, "", "jackhmmer", full, contains, edge={"t4"})
+	assert plain.member_label(0, "t4") == "Q1"

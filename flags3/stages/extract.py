@@ -181,9 +181,10 @@ class Extract(Stage):
 		hood = Neighbourhood(source.table, index, settings)
 		row = row_id(target.query, target.assembly)
 		q = hood.query
+		contig = hood.contig
 		for j, g in hood.genes():
 			outputs.genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start, g.end,
-				g.strand, g.product or MISSING, g.is_rna, hood.offset(j)))
+				g.strand, g.product or MISSING, g.is_rna, hood.offset(j), j == contig.first or j == contig.last - 1))
 			if g.is_rna:
 				seq = source.rna_sequence(g)
 				if seq:
@@ -200,7 +201,7 @@ class Extract(Stage):
 			if seq:
 				outputs.scan_proteins.setdefault(g.accession, seq)
 				outputs.scan_genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start,
-					g.end, g.strand, g.product or MISSING, False, hood.offset(j)))
+					g.end, g.strand, g.product or MISSING, False, hood.offset(j), j == contig.first or j == contig.last - 1))
 		lo, hi = hood.span()
 		scan_lo, scan_hi = hood.scan_span()
 		cut_lo, cut_hi = hood.scan_span(settings.margin)

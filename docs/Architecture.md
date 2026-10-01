@@ -242,6 +242,14 @@ families. The method is a row of the tools table (`-cm`), and every setting
 (iterations, inclusion E-value, chunking, mmseqs sensitivity) lives in that
 row's `options` column; there is no `-e` or `-n` any more.
 
+The jackhmmer row sets `incE` and `incdomE` to 1e-10, FlaGs2's values. FlaGs3
+1.0 to 2.3.0 ran at `incE` 1e-3 with HMMER's default `incdomE` of 0.01, which
+admits weak partial hits as family edges and lets marginal domains into the
+iterated profile; on the fusion case that raised the question the two
+settings gave identical families (every edge below 1e-42), but on promiscuous
+domains the looser setting joins families FlaGs2 keeps apart. `-ce` sets
+both thresholds together.
+
 jackhmmer calls carry many queries at once (`chunk`, `chunks_per_worker`),
 which is the fix for the per-call memory growth that 2.3.0 hit on dense
 subfamilies. mmseqs writes its input and hit table under `cluster/raw/`.

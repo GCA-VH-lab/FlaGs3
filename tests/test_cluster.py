@@ -27,7 +27,8 @@ def test_method_lookup_and_options():
 	tools = Tools.load()
 	assert cluster.methods(tools) == ["jackhmmer", "mmseqs_cluster", "mmseqs_cluster_exhaustive", "nhmmer"]
 	assert cluster.option(tools["jackhmmer"], "iterations", 1) == 3
-	assert cluster.option(tools["jackhmmer"], "incE", 1.0) == 1e-3
+	assert cluster.option(tools["jackhmmer"], "incE", 1.0) == 1e-10
+	assert cluster.option(tools["jackhmmer"], "incdomE", 1.0) == 1e-10
 	with pytest.raises(cluster.ClusterError):
 		cluster.method(tools, "mafft")
 	bad = Tool("x")
@@ -106,6 +107,7 @@ def test_command_line_overrides(tmp_path):
 	cfg.update({"iterations": 5, "cluster_evalue": 1e-6})
 	Cluster.override(tools, "jackhmmer", cfg)
 	assert tools["jackhmmer"].options["iterations"] == "5" and tools["jackhmmer"].options["incE"] == "1e-06"
+	assert tools["jackhmmer"].options["incdomE"] == "1e-06"
 	tools = Tools.load()
 	Cluster.override(tools, "mmseqs_cluster", cfg)
 	assert tools["mmseqs_cluster"].options["evalue"] == "1e-06" and "iterations" not in tools["mmseqs_cluster"].options

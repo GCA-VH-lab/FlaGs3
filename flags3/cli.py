@@ -183,15 +183,9 @@ def _stage(args) -> int:
 		if value is not None:
 			config.set(key, _resolved(key, value))
 	config.set("fetch.slots", sorted({slot for stage in PIPELINE if stage().wanted(config) for slot in stage.needs}))
-	runner = Runner(run, config)
-	stages = [BY_NAME[args.command]()]
-	for companion in COMPANIONS.get(args.command, ()):
-		if BY_NAME[companion]().wanted(config):
-			stages.append(BY_NAME[companion]())
-	return 0 if all(runner.execute(stage) for stage in stages) else 1
+	return 0 if Runner(run, config).execute(BY_NAME[args.command]()) else 1
 
 
-COMPANIONS = {"cluster": ("cluster_rna",)}
 IMPLIES = (("local_tmhmm", "tmhmm"), ("local_signalp", "signalp"), ("iqtree", "tree"), ("tree_order", "tree"))
 
 

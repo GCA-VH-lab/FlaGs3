@@ -156,6 +156,8 @@ class Cluster(Stage):
 				print("Warning: -n/--iterations has no meaning for {} ({}); ignored.".format(name, tool.engine))
 		if config.text("cluster_evalue"):
 			tool.options["incE" if hmmer else "evalue"] = config.text("cluster_evalue")
+			if tool.engine == "jackhmmer":
+				tool.options["incdomE"] = config.text("cluster_evalue")
 			note("{}: E-value = {} from the command line".format(name, config.text("cluster_evalue")))
 
 

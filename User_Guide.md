@@ -226,7 +226,7 @@ two of them can be overridden for a run:
 
 ```
 -n 5            jackhmmer/nhmmer iterations (table default 3)
--ce 1e-5        inclusion E-value for clustering hits (table default 1e-3)
+-ce 1e-5        inclusion E-value for clustering hits (table default 1e-10, as in FlaGs2)
 -sc 0.6         split a family into subfamilies where alignments cover this
                 fraction of both sequences; a fusion joining two subfamilies
                 is labelled with both letters (Q1ab); 0 switches it off

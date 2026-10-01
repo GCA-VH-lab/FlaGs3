@@ -21,7 +21,10 @@ A rewrite. Same analysis, same figures, different construction.
   built. DeepTMHMM is now DeepTMHMM2, local and licence-free.
 - DeepTMHMM and SignalP on BioLib run as one job each, submitted together
   and concurrently with the local stages.
-- Clustering settings (`-e`, `-n`) moved into the tools table.
+- Clustering settings live in the tools table; `-n` and `-ce` override them
+  per run. The jackhmmer inclusion thresholds are back at FlaGs2's values
+  (`incE` and `incdomE` 1e-10); FlaGs3 up to 2.3.0 used 1e-3 and HMMER's
+  default `incdomE`, which clustered more inclusively.
 - Output layout: one directory per stage, `report/` for the human tables
   and `report/legacy/` for the 2.3.0 files (`_operon.tsv` and friends,
   byte-compatible), `figures/` for the SVGs.

@@ -220,7 +220,7 @@ class JackhmmerClusterer(PyhmmerClusterer):
 	def search(self, queries, block):
 		import pyhmmer
 		return pyhmmer.hmmer.jackhmmer(queries, block, max_iterations=option(self.tool, "iterations", 3),
-			incE=option(self.tool, "incE", 1e-3), cpus=1)
+			incE=option(self.tool, "incE", 1e-10), incdomE=option(self.tool, "incdomE", 1e-10), cpus=1)
 
 
 class NhmmerClusterer(PyhmmerClusterer):
@@ -228,7 +228,7 @@ class NhmmerClusterer(PyhmmerClusterer):
 
 	def search(self, queries, block):
 		import pyhmmer
-		return pyhmmer.hmmer.nhmmer(queries, block, incE=option(self.tool, "incE", 1e-3), cpus=1)
+		return pyhmmer.hmmer.nhmmer(queries, block, incE=option(self.tool, "incE", 1e-10), cpus=1)
 
 
 class MmseqsClusterer(Clusterer):

@@ -1,741 +1,476 @@
-# FlaGs3 — User Guide
+# FlaGs3 User Guide
 
-Predicting protein functional association by analysis of conservation of genomic context (Flanking Genes).
+This guide is written to be followed top to bottom the first time. Every
+command in it is meant to be pasted as is.
 
----
+## 1. Installing
 
-## Installing
+FlaGs3 needs Python 3.11 or later. The recommended way is pipx, which
+installs the `flags3` command into its own environment and puts it on your
+PATH once and for all:
 
-With conda:
-
-```bash
-bash build.sh
-conda activate FlaGs3
+```
+git clone https://github.com/GCA-VH-lab/FlaGs3.git
+pipx install ./FlaGs3
+flags3 --version
 ```
 
-`build.sh` creates the environment, verifies it, then offers each optional tool
-in turn: the Pfam-A database, the DefenseFinder HMM profiles, MMseqs2, geNomad
-and its database, DefenseFinder, PadLoc, and the two licensed tools. It is safe
-to re-run — it detects what is already installed and skips it.
+pipx itself comes from your package manager (`pacman -S python-pipx`,
+`apt install pipx`, `brew install pipx`; then `pipx ensurepath` once).
+To upgrade later: `pipx upgrade flags3`, or `pipx install --force` from
+the updated checkout.
 
-To answer up front instead of being asked:
+Without pipx, a virtual environment does the same job, except that it
+must be activated (`source .venv/bin/activate`) in every new terminal
+before `flags3` is found:
 
-```bash
-bash build.sh --all                       # everything that needs no licence
-bash build.sh --none                      # environment only
-bash build.sh --with genomad,padloc       # just these
+```
+cd FlaGs3
+python -m venv .venv
+source .venv/bin/activate
+pip install .
 ```
 
-SignalP and DeepTMHMM need a package you obtained yourself, so `--all` reports
-them as needing a path rather than stopping to ask. Give them one with
-`--signalp PACKAGE.tar.gz` or `--deeptmhmm PACKAGE`, or run their installers
-later.
+Developers working on the code use `pip install -e ".[test]"` in
+that environment so edits take effect without reinstalling.
 
-Or install the core dependencies by hand:
+`--pdf` needs the cairo library, which Linux has and macOS gets from
+`brew install cairo`; without it SVGs are still written and `--pdf` prints
+a warning.
 
-```bash
-pip install biopython "pyhmmer>=0.12,<0.13" requests
+If you live in conda, the third route is one environment with FlaGs3 and
+the core tools together:
+
+```
+cd FlaGs3
+conda env create -f environment.yml
+conda activate flags3
+flags3 --version
 ```
 
-Optional features need extra pieces, each only required if you use the matching
-flag:
+That brings mafft, trimal, VeryFastTree, IQ-TREE, BLAST+, MMseqs2 and
+cairo with it, so `flags3 install core` and `flags3 install mmseqs` find
+them on PATH and build nothing. The environment must be activated in every
+terminal, as any conda environment.
 
-| Flag | Needs |
+Whichever route, everything else — external tools, databases, downloaded
+genomes — lives under `~/.flags3/`.
+
+### External tools: `flags3 install`
+
+Nothing beyond Python is needed for the basic run: genome download,
+neighbourhood extraction, clustering (jackhmmer runs inside Python) and the
+figures. Everything else is installed on demand:
+
+```
+flags3 install                 # list components and whether they are installed
+flags3 install core            # mafft, trimal, VeryFastTree, IQ-TREE, BLAST+   (for --tree)
+flags3 install pfam            # Pfam-A HMMs and clans, ~1.5 GB               (for --domains)
+flags3 install mmseqs          # MMseqs2                                       (for -cm mmseqs_cluster)
+flags3 install sismis          # Sismis                                        (for --sismis)
+flags3 install genomad         # geNomad and its 1.6 GB database              (for --genomad)
+flags3 install defensefinder   # DefenseFinder and its models                  (for --defensefinder)
+flags3 install padloc          # PadLoc and its database                       (for --padloc)
+flags3 install defence-hmm     # DefenseFinder HMM profiles alone              (for --domains -db)
+flags3 install deeptmhmm       # DeepTMHMM2, local and licence-free            (for --tmhmm -lth)
+flags3 install --all           # all of the above that are not yet installed
+flags3 install --update        # refresh the databases of what is installed
+flags3 install --force pfam    # reinstall one from scratch
+```
+
+One component is licensed and needs a package you download yourself from
+DTU, then hand to the installer:
+
+```
+flags3 install signalp ~/Downloads/signalp-6.0h.fast.tar.gz
+```
+
+And one is a file that is not downloadable at all — the InterPro metadata
+table used to annotate domains. If you have it:
+
+```
+flags3 install interpro /path/to/interpro_metadata_processed.tsv
+```
+
+The installer first looks for each tool on your PATH and uses it if it is
+there — from conda, Homebrew, a cluster module, wherever. What is missing
+it builds in its own environment under `~/.flags3/envs/` with micromamba,
+using the one on your PATH if you have it and otherwise downloading a
+single binary into `~/.flags3/tools/`. It never uses or changes a conda
+installation of yours. MMseqs2 comes as the static release binary. After
+each install the tool's location is written into
+`~/.flags3/tools_table.tsv`, which every run reads. To remove a component,
+delete its directory under `~/.flags3/envs/`, `~/.flags3/tools/` or
+`~/.flags3/db/`.
+
+Without `-lth`/`-lsp`, `--tmhmm` and `--signalp` run on the BioLib cloud:
+one job per tool (up to 2,000 proteins for DeepTMHMM and 1,000 for SignalP
+per job), both submitted at once, with a link printed for each so you can
+watch it on biolib.com. A run's wait is one queue wait, not one per batch.
+
+## 2. The genome directory
+
+Genomes are downloaded once into `~/.flags3/genomes/` and reused by every
+later run. Nothing is ever deleted from it. Three flags change that:
+
+```
+-gd DIR       use this directory instead: looked in first, downloaded into
+--offline     use the directory only; never contact NCBI or MGnify
+-lf           look bare queries up in the directory before asking NCBI
+--no_cache    leave the cache alone: download into <run>/genomes/ instead
+```
+
+`-gd` is how you point a run at genomes you already have — a colleague's
+cache when reproducing their run, a folder on shared storage, or your own
+assemblies that are in no database. Files there are recognised by name:
+`X_genomic.gff` (or `.gff3`, gzipped or not) and `X_protein.faa` sharing
+the basename `X`, plus optionally `X_genomic.fna` for the sequence
+scanners and `X_rna_from_genomic.fna` for RNA clustering. A query paired
+with `X` in the input list uses those files without any network access.
+With `--offline`, bare queries are looked up in the directory's protein
+files instead of at NCBI, and nothing is downloaded. With `-lf`
+(`--local_first`) they are looked up there first and only the ones not
+found go to IPG, so one list can mix your own assemblies with NCBI
+queries in an online run.
+
+`--no_cache` is for a run whose genomes you don't want kept: a download
+test, or a one-off on hundreds of assemblies. They still land in
+`<run>/genomes/`, so every stage can be rerun; deleting the run directory
+deletes them.
+
+## 3. The input list
+
+A text file, one query per line:
+
+```
+WP_005328829.1
+NP_416433.1	GCF_000005845.2
+MGYG000454827_00001	MGYG000454827
+# comments and blank lines are ignored
+```
+
+- A bare protein accession is resolved through NCBI's IPG to the assembly
+  that carries it (RefSeq first). `-m 3` takes up to three assemblies,
+  `-nc` keeps RefSeq proteins in RefSeq assemblies only.
+- A tab and an assembly accession pin the genome. Add `-rm` if a paired
+  query might be annotated under a different accession in that assembly;
+  IPG is then asked, and the query is matched under whatever name it has
+  there.
+- MGnify genome accessions (`MGYG…`) are recognised and fetched from the
+  MGnify catalogue; their proteins are named by locus tag.
+- Several lists can be given: `-i a.txt -i b.txt`.
+
+### Starting from one protein: BlastP
+
+Instead of, or in addition to, a list, give one starting point and let
+BlastP find its homologues, which then become the queries:
+
+```
+flags3 run -bi start.txt -u you@example.org -o myrun
+```
+
+`start.txt` holds either one accession or a protein sequence (FASTA or
+bare residues). The same can be done inside the list: a line with a tab
+and `BLAST` after an accession or a sequence is expanded in place.
+
+```
+WP_005328829.1	BLAST
+MKVLLAKQRTV...	BLAST
+```
+
+```
+-bm remote      NCBI QBLAST, nothing to install, minutes per search (default)
+-bm local       blastp from flags3 install core; -bd is then a local database path
+-bd refseq_select   or refseq_protein, genbank, swissprot
+-be 1e-5        E-value cutoff
+-bh 50          hits carried forward as queries; each is a genome and a row
+-bw 60          minutes to wait on NCBI's queue
+```
+
+The hits go to `blast/hits.tsv` with E-values and descriptions, and
+`blast/accessions.txt` is a ready input list for repeating the run without
+searching again.
+
+## 4. Running
+
+```
+flags3 run -i list.txt -u you@example.org -o myrun
+```
+
+`-u` is your email address, which NCBI requires. `-o` names the run
+directory; a timestamp is appended unless you add `-nt`. The run prints one
+line as each stage starts and finishes, more with `-vb`.
+
+### What to analyse
+
+```
+-g 4            flanking genes on each side of the query (default 4)
+-r 5000         instead of -g: every gene within 5000 bp of the query
+-sr 20000       span each side of the query handed to the sequence scanners
+                (Sismis, geNomad); without it they see the whole contig
+-sm 10000       extra sequence beyond -sr so a system at the edge is called whole
+```
+
+### Clustering
+
+```
+-cm jackhmmer   the method: a row of the tools table (default jackhmmer;
+                mmseqs_cluster or mmseqs_cluster_exhaustive after
+                flags3 install mmseqs)
+-cr             cluster flanking RNA genes too (nhmmer; RNAs without a
+                sequence are grouped by product name)
+```
+
+Thresholds, iterations and sensitivity live in the tools table (section 9);
+two of them can be overridden for a run:
+
+```
+-n 5            jackhmmer/nhmmer iterations (table default 3)
+-ce 1e-5        inclusion E-value for clustering hits (table default 1e-3)
+-sc 0.6         split a family into subfamilies where alignments cover this
+                fraction of both sequences; a fusion joining two subfamilies
+                is labelled with both letters (Q1ab); 0 switches it off
+```
+
+Subfamilies are drawn as lighter shades of the family colour and listed in
+`report/families.tsv` (`subfamilies`, `bridges`).
+
+### Tree
+
+```
+-t              mafft → trimal → VeryFastTree on the query proteins
+-iq             IQ-TREE with ModelFinder and 1000 ultrafast bootstraps instead
+-to             order rows in figures and tables by the tree
+-tm gt -tv 0.1  trimal mode and value (also cons, st, gappyout, strict, …)
+```
+
+### Domains and protein features
+
+```
+-d              scan flanking proteins against Pfam-A (from flags3 install pfam)
+-db NAME=PATH   another HMM source: a .hmm file, or a directory of profiles;
+                repeat for several, e.g. -db defensefinder=~/.flags3/db/defensefinder/profiles
+-hc NAME=Q,H    minimum fraction of the protein (Q) and of the model (H) a hit
+                must cover; without NAME= it applies to every source
+-e 1e-3         E-value for models without a gathering threshold
+-cl FILE        Pfam-A.clans.tsv(.gz): colour domains by clan instead of family
+-ip FILE        an InterPro metadata table, if you have one
+-th             transmembrane regions with DeepTMHMM2, on the BioLib cloud or,
+                with -lth, locally from flags3 install deeptmhmm (no queue, no
+                licence, but slower on a CPU); --tmhmm_app DTU/DeepTMHMM picks
+                the 1.0 model on the cloud
+-sp             signal peptides (SignalP 6 on BioLib); -lsp runs the licensed
+                local SignalP from flags3 install signalp
+```
+
+### Sequence and system scanners
+
+```
+-ss             secretion systems (Sismis)
+-gn             proviruses and plasmids (geNomad); -gdb DIR for another database
+-df             anti-phage defence systems (DefenseFinder)
+-pl             anti-phage defence systems (PadLoc); with -df, agreed calls are drawn once
+```
+
+### Figures and output
+
+```
+-f FILE         your own figure table (section 8)
+-nf             no figures; draw later with flags3 figures
+-fh 16383       split a figure into parts above this height in pixels
+-no             classic style: leave the number out of a gene too small for it
+-pdf            a PDF beside every SVG; a figure split into SVG parts is one PDF
+-c 8            worker threads (default: all cores)
+--tools FILE    a tool table other than ~/.flags3/tools_table.tsv
+```
+
+### A full example
+
+```
+flags3 run -i list.txt -u you@example.org -g 4 -sr 20000 -cr -t -to -d -ss -gn -df -pdf -o myrun -nt
+```
+
+## 5. The run directory
+
+```
+myrun/
+    run.tsv           version, start time, command line
+    config.tsv        every option, resolved; a rerun of a stage reads it
+    console.log       everything printed, plus every external command and its output
+    input/            copies of the input lists
+    blast/            hits.tsv, accessions.txt (only with -bi or a BLAST line)
+    fetch/            genomes.tsv (which files were used), queries.tsv, failures.tsv
+    extract/          genes.tsv, windows.tsv, rows.tsv, unmatched.tsv, range_report.tsv,
+                      proteins.faa, queries.faa, rna.fna
+    cluster/          families.tsv, hits.tsv, annotations.tsv
+    cluster_rna/      the same for RNA genes
+    tree/             tree.nwk, alignment.aln, trimmed.aln, leaves.tsv, commands.txt
+    domains/          domains.tsv, annotations.tsv
+    features/         features.tsv, annotations.tsv
+    sismis/           secretion.tsv, diagnostics.tsv, annotations.tsv, raw/
+    genomad/          mobile_elements.tsv, diagnostics.tsv, annotations.tsv, raw/
+    defence/          defence.tsv, diagnostics.tsv, annotations.tsv, raw/
+    report/           the tables for reading (section 6)
+    figures/          the SVGs and PDFs (section 7)
+```
+
+Every stage directory has a `status.tsv` saying `ok` or `failed`, with the
+time it took and the error if any. An optional stage that fails (a tool not
+installed, no queries for a tree) is recorded there and the run continues;
+`report/run_summary.txt` lists them all.
+
+### Rerunning a stage
+
+Every stage is a subcommand that takes a run directory and re-does only its
+own part, reading the options the run was made with, plus any you give:
+
+```
+flags3 figures myrun -f figures.tsv        # redraw
+flags3 cluster myrun -cm mmseqs_cluster    # recluster, then: flags3 report myrun; flags3 figures myrun
+flags3 cluster myrun -cr                   # adds RNA clustering (runs cluster_rna too); for real RNA
+                                           # sequences do flags3 fetch myrun -cr && flags3 extract myrun first
+flags3 domains myrun -db defensefinder=~/.flags3/db/defensefinder/profiles -hc defensefinder=0.7,0.5
+flags3 extract myrun -g 8                  # then cluster, tree, domains …, report, figures
+flags3 tree myrun -iq
+```
+
+A stage that needs files the run never fetched — the genome FASTA for
+`-ss`/`-gn` after a run without them, the RNA FASTA for `-cr` — gets them
+with `flags3 fetch myrun -gn` (or `-ss`, `-cr`), which downloads only what
+is missing into the genome directory; then run the stage.
+
+A flag the run had on can be switched off for the rerun with `--no-<option>`,
+e.g. `flags3 features myrun -lth --no-signalp` reruns only the local
+transmembrane prediction.
+
+A stage deletes and rewrites its own directory only. Stages that read it
+(`report`, `figures`, and after `extract` all analysis stages) are not
+rerun automatically; run them yourself in that order.
+
+## 6. Reading the results
+
+`report/neighbourhoods.tsv` is the main table: one line per gene per row.
+
+| column | meaning |
 |---|---|
-| `-t`, `--tree`, `--tree_order` | `mafft` and `VeryFastTree` on `PATH` |
-| `--blast_mode local` | `blastp` from NCBI BLAST+ on `PATH`, and a local protein database |
-| `-tm`, `--trimal_mode` | `gt` | trimal column filter: `gt`, `cons`, `st`, or a preset (`gappyout`, `strict`, `strictplus`, `automated1`, `nogaps`, `noallgaps`). |
-| `-tv`, `--trimal_value` | `0.1` | Value for the modes that take one. |
-| `-tx`, `--trimal_extra` | — | Extra trimal arguments passed through verbatim. |
-| `-iq`, `--iqtree` | `mafft` and `iqtree` on `PATH` |
-| `-d`, `--domains` | an HMM database — run `pfamA_loader.sh` to fetch Pfam-A |
-| `-th`, `--tmhmm`, `--signalp` | `pip install pybiolib` and a network connection |
-| `-ss`, `--sismis` | `pip install sismis` |
+| row_id | `query|assembly` |
+| offset | position relative to the query in the query's reading direction; negative is upstream |
+| accession | protein accession, or `pseudogene*` |
+| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab`; a protein only ever seen at the end of a contig gets `Q1?`, since it may be incomplete |
+| contig_edge | `true` when the gene is the first or last on its contig |
+| strand | the gene's strand on the contig (the figure flips rows so the query points right) |
+| domains | domain names on the protein, in order, when `-d` was on |
 
-If a tool is missing, FlaGs3 prints a warning, skips that feature, and finishes
-the rest of the run. That applies to `-lth` and `-lsp` too: if either tool is
-unusable where you pointed it, that feature is skipped and the reason is recorded
-in `_runinfo.txt`, so a run never silently falls back to the cloud.
+`report/queries.tsv` says what happened to every input query: the
+assemblies it was resolved to, how many rows it produced, and why none if
+none. `report/families.tsv` lists every family with a representative
+product. `flanking.faa`, `queries.faa` and `all.faa` carry the sequences;
+every FASTA id is the identifier used in the tables and the product or
+species follows after a space.
 
-MGnify accessions are resolved through MGnify's API v2. MGnify's own API v1 was
-switched off in September 2026, so older FlaGs3 releases will not resolve `MGYG`
-accessions at all.
+`report/legacy/` holds the FlaGs2-era files with the same names and formats
+as before (`<run>_operon.tsv`, `_outdesc.txt`, `_speciesInfo.txt`,
+`_QueryStatus.txt`, `_flankgene_Report.log`, `_clusters.tsv`,
+`_rangeReport.tsv`, `_accessionIssues.txt` and the three FASTAs) for
+scripts that depend on them.
 
-### One run at a time per `-tmp` directory
+The stage tables are one level down. `cluster/hits.tsv` says which
+sequences each protein hit; `domains/domains.tsv` has every hit with
+E-value, clan and InterPro fields; `sismis/secretion.tsv`,
+`genomad/mobile_elements.tsv` and `defence/defence.tsv` give every called
+system with absolute contig coordinates, the rows it overlaps, and the
+tool's own columns.
 
-FlaGs3 takes a lock on its temporary directory, so a second run started against
-the same `-tmp` stops with a message naming the holder instead of starting. Two
-runs sharing that directory overwrite each other's downloads and double the
-request rate against NCBI and EBI, which gets your host throttled — and the
-throttling outlives the run that caused it, so downloads stay slow for a while
-afterwards. To run two analyses at once, give each its own `-tmp`.
+## 7. Reading the figures
 
-If a run is killed outright, its lock is left behind; the next run notices the
-owning process is gone and reclaims it, so a stale lock never needs clearing by
-hand. `--no_lock` skips the check entirely.
+Each row is one query in one genome. The query is drawn pointing right,
+with a black outline; the row is mirrored when the query is on the minus
+strand. Genes are coloured by family and labelled with the family label
+above them; grey genes belong to no shared family. RNA genes have a green
+outline, pseudogenes a blue one.
 
-`mafft`, `VeryFastTree` and `iqtree` are all in `environment.yml`, so the conda
-route covers the tree flags without anything extra. The table above matters only
-if you install by hand.
-
-Keep `pyhmmer` in the 0.12 series. FlaGs3 is developed against it, and sismis
-(via gecco) requires it — an unpinned install can leave the two in conflict.
-
----
-
-## The input list
-
-One query per line. Two accepted forms, which can be mixed in the same file:
-
-```
-WP_047256880.1                          # protein only — FlaGs3 finds the genome
-WP_047256880.1    GCF_000001765.3       # protein + genome, tab-separated
-MGYG000454827_00001   MGYG000454827     # MGnify genome
-```
-
-**Protein only.** FlaGs3 resolves the genome through NCBI. This works for RefSeq
-and GenBank proteins; `-m` controls how many genomes a protein may expand to when
-it appears in several.
-
-**Protein + genome.** Skips the lookup. The genome may be:
-
-- an NCBI assembly — `GCF_...` (RefSeq) or `GCA_...` (GenBank)
-- an MGnify Genomes accession — `MGYG...`
-
-For MGnify genomes the protein accession must be the **exact locus tag** from
-that genome's annotation (`MGYG000454827_00001`, not an `MGYP...` protein ID).
-MGnify has no equivalent of NCBI's lookup service, so a bare MGnify protein
-accession cannot be resolved to its genome — always supply the pair.
-
-To find real locus tags for a genome:
-
-```bash
-curl -s "https://www.ebi.ac.uk/metagenomics/api/v1/genomes/MGYG000454827/downloads/MGYG000454827.faa" \
-  | grep '^>' | head | sed 's/^>//' | cut -d' ' -f1
-```
-
----
-
-## Running it
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o results
-```
-
-`-u` is required by NCBI on any Entrez request. `-o` names the output directory
-*and* becomes the prefix on every file inside it.
-
-That is the whole default pipeline: it resolves each query to a genome, pulls the
-flanking genes, clusters them, and writes the figure and tables. Everything else
-is optional. See [All options](#all-options) for the full list and
-[Examples](#examples) for common combinations.
-
-## All options
-
-### Required
-
-| Option | Description |
+| figure | what it shows |
 |---|---|
-| `-i`, `--input_list FILE` | Query list, one per line. See [The input list](#the-input-list). |
-| `-u`, `--user_email ADDR` | Your email. NCBI requires it on every Entrez request. Not used for anything else. |
+| `neighbors` | the neighbourhoods |
+| `tree` | the neighbourhoods aligned to the tree of the queries, bootstrap values in red, in the classic look |
+| `domains` | domain wedges inside the genes, numbered; TM regions as red hatching, signal peptides as a black triangle; family numbers prefixed `G` so they don't clash with domain numbers |
+| `sismis`, `genomad`, `defence` | genes in grey, the called systems as coloured bands under the row with codes `S1`, `M1`, `D1` |
+| `all-in-one` | everything, one band lane per tool |
+| `classic` | the original FlaGs look; add a row with `tree` set to `1` for a classic tree figure |
 
-### Where genomes come from
+A figure is drawn only when a stage it shows produced something. Every
+figure has a legend panel per layer; a domain panel can be long.
 
-| Option | Default | Description |
-|---|---|---|
-| `-ul`, `--use_local DIR` | — | Search a directory of local genomes before going to NCBI. A genome is a `.gff` and `.faa` sharing a basename; `.fna` and RNA FASTAs are picked up if present. Files may be gzipped. Anything not found falls back to NCBI. |
-| `-m`, `--max_assemblies N` | `1` | How many genomes one protein may expand to when it occurs in several. Each genome becomes its own row. Raise to compare strains. Above `1`, row labels in the figures become `protein\|genome` so the rows stay distinguishable. |
-| `-nc`, `--no_cross_db` | off | Keep protein and genome in the same database: RefSeq proteins (`WP_`, `NP_`, `YP_`, ...) resolve only to `GCF_` assemblies, INSDC proteins only to `GCA_`. A protein whose only assemblies sit in the other database is then reported as unresolved rather than annotated against a mirrored genome. Assemblies you supply yourself in the input file are never filtered. |
-| `-rm`, `--remap` | off | Look a protein up again through IPG when the assembly it was paired with in the input produced nothing. Costs extra requests and downloads, so it is opt-in. |
-| `-api`, `--api_key KEY` | — | NCBI API key. Also raises the download rate cap from 5/s to 10/s. |
-| `-tmp`, `--temporary DIR` | `./genomes` | Where downloads are stored. Deleted at the end unless `-k`. |
-| `-k`, `--keep` | off | Keep downloaded genomes instead of deleting them. Useful for reruns — the directory can be fed straight back in via `--use_local`. |
+Three files sit beside the figures: `legend.tsv` (every domain and band
+code with its name), `families_legend.txt` (each family's members with
+their labels and products, the old `_outdesc` layout), and `systems.tsv`
+(each drawn defence, secretion or mobile-element system with the genes
+inside it and the families they belong to).
 
-### Finding queries with BlastP
+## 8. Your own figures
 
-Used only with `--blast_input`. See [Starting from one protein](#starting-from-one-protein).
-
-| Option | Default | Description |
-|---|---|---|
-| `-bi`, `--blast_input FILE` | — | File holding one RefSeq accession, or one protein sequence as FASTA or bare residues. BlastP finds its homologues and they become the queries. |
-| `-bh`, `--blast_hits N` | `50` | **Cap on how many BlastP hits are carried forward as queries.** Allowed 2-200. Hits are taken best-first, so a smaller number keeps the closest homologues. This is the main control on how big the run gets: every hit becomes a genome to download and a row in the figure. |
-| `-be`, `--blast_evalue E` | `1e-5` | E-value cutoff for the BlastP search. Loosen it (e.g. `1e-3`) if a short or divergent query returns too few hits; tighten it to drop marginal ones. |
-| `-bd`, `--blast_db NAME` | `refseq_select` | `refseq_select` (representative RefSeq proteins, faster), `refseq_protein` (full RefSeq), `genbank` (nr), or `swissprot`. Any other value is passed through unchanged, which is how a local database name or path is given. |
-| `-bm`, `--blast_mode` | `remote` | `remote` uses NCBI QBLAST — nothing to install, but a search takes minutes. `local` runs `blastp` from NCBI BLAST+ against a local database: far faster, but you need the binary and the database. |
-
-### What gets analysed
-
-`-g` and `-r` are two ways to say how big a neighbourhood is, and `-r` wins when
-both are given. `-g 4` takes four genes either side whatever the distance; `-r
-50000` takes everything within 50 kb whatever the gene count, which on a typical
-bacterial genome is around 85 genes.
-
-That difference is not free. Clustering compares every flanking protein against
-every other, so its cost grows with the *square* of how many genes you take:
-about 80x going from `-g 4` to `-r 50000`. On a large input that is the
-difference between an hour and a fortnight.
-
-`-sr` is the way out. The scanning tools take a genomic interval and do not care
-how many genes are in it, so the span they see can be set independently of the
-neighbourhood:
+Figures are rows of a table. Copy the shipped one and edit it:
 
 ```
--g 5 -sr 50000
+python -c "import flags3.data, importlib.resources as r; print(r.files(flags3.data) / 'visualisation_table.tsv')"
+cp <that path> figures.tsv
+flags3 figures myrun -f figures.tsv
 ```
 
-clusters and draws 11 genes per row while still giving the tools 100 kb of
-context around each query. Use `-r` when you want the whole island coloured and
-the input is small enough; use `-g` with `-sr` when it is not.
+Columns:
 
-| Option | Default | Description |
-|---|---|---|
-| `-g`, `--gene N` | `4` | Flanking genes to take each side of the query. |
-| `-r`, `--range BP` | off | Take every gene within this many bases of the query gene instead of a fixed count. Measured outwards from the query gene's own start and end; a gene straddling the edge is included, so the distance reached usually overshoots by part of one gene. Overrides `-g`. |
-| `-sr`, `--scan_range BP` | neighbourhood span | Genomic span around the query handed to the scanning tools, independent of how many genes are clustered and drawn. |
-| `-sm`, `--scan_margin BP` | `10000` | Extra sequence given to the scanning tools beyond the analysis range, so a system straddling the edge is called whole rather than cut in half. Hits reaching into the margin are kept and marked `partial`. `0` scans exactly the analysis range. |
-| `-df`, `--defensefinder` | off | Call anti-phage defence systems with DefenseFinder, drawn as bands labelled with the system name. Needs `defensefinder_installer.sh`. |
-| `-pl`, `--padloc` | off | The same with PadLoc. Both can run together. Needs `padloc_installer.sh`. |
-| `-gn`, `--genomad` | off | Find proviruses and plasmids with geNomad, drawn as bands like Sismis'. Needs `genomad_installer.sh` then `genomad_loader.sh`. |
-| `-gdb`, `--genomad_db DIR` | from tools table | geNomad database directory. |
-| `-e`, `--ethreshold X` | `1e-3` | Inclusion E-value for clustering. Lower is stricter, giving more and smaller families. |
-| `-n`, `--number N` | `3` | Jackhmmer iterations. More iterations find remoter homology but blur family boundaries. |
-| `-cm`, `--cluster_method NAME` | `jackhmmer` | How two flanking proteins are decided to be homologous, naming a row of `tools_table.tsv`. `jackhmmer` is the reference; `mmseqs_cluster` is roughly 45x faster and finds about 81% of the same within-family pairs; `mmseqs_cluster_exhaustive` finds about 86% and is quadratic. An unknown name lists what the table offers. |
-| `-cr`, `--cluster_rna` | off | Also cluster flanking RNA genes into families. Uses nhmmer on RNA sequences where available, otherwise groups by product name. |
-
-### Output and progress
-
-| Option | Default | Description |
-|---|---|---|
-| `-o`, `--output DIR` | `output` | Result directory. A `_YYYYMMDD_HHMMSS` stamp of the run start is appended so repeated runs do not overwrite each other, and the stamped name is also the prefix on every file inside, so `-o myrun` produces `myrun_20260810_093134/myrun_20260810_093134_neighbors.svg`. |
-| `-nt`, `--no_timestamp` | off | Use `-o` verbatim, without the stamp. Repeated runs then overwrite each other; use it when a pipeline needs a fixed path. |
-| `-vb`, `--verbose` | off | Per-stage progress and a timing breakdown. Worth using on any long run. |
-| — | always on | Every line the run prints is copied to `<prefix>_console.log` in the output directory. Nothing turns this off; it costs one open file. |
-| `-dbg`, `--debug` | off | Diagnostics to stderr, each line stamped with seconds since start: per-file download timings split into limiter wait, time-to-first-byte and body transfer, plus HTTP status codes, external command lines with exit codes, and full tracebacks. Implies `--verbose`. Start here when downloads are slow or a tool silently produces nothing. |
-| `-nl`, `--no_lock` | off | Skip the lock that stops two runs sharing one `-tmp` directory. Only safe if each run has its own `-tmp`. |
-| `-v`, `--version` | — | Print the version and exit. |
-| `-h`, `--help` | — | Print all options and exit. |
-
-### Optional figures and annotation
-
-Each needs an extra dependency. If it is missing, FlaGs3 warns, skips that
-feature, and completes the rest of the run.
-
-| Option | Needs | Description |
-|---|---|---|
-| `-t`, `--tree` | mafft, VeryFastTree | Also build a phylogenetic tree with the neighbourhoods aligned to its leaves (`_tree.svg`, `_tree.nwk`, `_tree.aln`). Does not change the main figure. |
-| `-tm`, `--trimal_mode` | `gt` | trimal column filter: `gt`, `cons`, `st`, or a preset (`gappyout`, `strict`, `strictplus`, `automated1`, `nogaps`, `noallgaps`). |
-| `-tv`, `--trimal_value` | `0.1` | Value for the modes that take one. |
-| `-tx`, `--trimal_extra` | — | Extra trimal arguments passed through verbatim. |
-| `-iq`, `--iqtree` | mafft, iqtree | Build the tree with IQ-TREE instead of VeryFastTree: ModelFinder picks the substitution model and 1000 ultrafast bootstrap replicates give branch support. Implies `--tree`. Far slower, so use it for the final figure rather than while exploring. |
-| `--tree_order` | mafft, VeryFastTree | Order rows by tree leaf order, in the main figure and in `_operon.tsv`. Implies `--tree`. |
-| `-d`, `--domains` | `-db` | Scan flanking proteins for domains and write `_domains.tsv`. Figures using them are controlled by the figure table. |
-| `-db`, `--hmmdb [NAME=]PATH` | `./pfam_db/Pfam-A.hmm` | HMM database for `--domains`: a `.hmm` file, or a directory of `.hmm` files such as DefenseFinder's `profiles/`. Repeat for several. `NAME=` labels it in the outputs; otherwise the file or directory name is used. Models carrying a gathering threshold are scored by it, the rest by `-e`. |
-| `-hc`, `--hmm_coverage [NAME=]Q[,H]` | — | Minimum fraction of the protein (Q) and of the model (H) an alignment must span. `NAME=` applies it to one database, omitting it applies to all. Use for full-length protein models such as DefenseFinder (`0.7,0.5`); leave off for Pfam, where partial coverage is normal. |
-| `-ip`, `--interpro FILE` | `interpro_metadata_processed.tsv` | InterPro metadata table (`.tsv` or `.tsv.gz`). Adds the InterPro entry, name, type and short characterisation/informativeness summaries to `_domains.tsv`, joined on the Pfam accession. Needs `accession` and `pfam_members` columns. Found automatically in the working directory or next to `FlaGs3.py`; if it isn't there the domain table is simply written without those columns. A path you pass yourself must exist. |
-| `--clans FILE` | — | `Pfam-A.clans.tsv.gz`. Colours domains by clan rather than family, which groups related domains together. |
-| `-lth`, `--local_tmhmm` | off | Predict transmembrane regions with a local DeepTMHMM rather than the BioLib cloud. Implies `--tmhmm`, so it is used on its own. |
-| `-lsp`, `--local_signalp` | off | Predict signal peptides with a local SignalP rather than the BioLib cloud. Implies `--signalp`, so it is used on its own. |
-| `--tools TSV` | `tools_table.tsv` | Table of external tool commands. |
-| `-th`, `--tmhmm` | pybiolib, network | Predict transmembrane regions with DeepTMHMM, drawn as double red dotted lines on the domain figure. Uploads your sequences to the BioLib cloud. |
-| `-sp`, `--signalp` | pybiolib, network | Predict signal peptides with SignalP-6, drawn as black triangles on the domain figure. Also uploads sequences. |
-| `-ss`, `--sismis` | sismis | Scan each genome for secretion systems and write `_secretion.tsv` plus `_secretion.svg`, noting which neighbourhoods each hit overlaps. Downloads the genomic FASTA per genome. |
-
-`--tmhmm`, `--signalp` and `--sismis` run concurrently with each other, since
-each spends a lot of time waiting on a remote service or a subprocess.
-
-### Performance
-
-| Option | Default | Description |
-|---|---|---|
-| `-c`, `--cpu N` | auto | Worker cap for clustering, domain scanning and downloads. |
-
-Download rate is capped independently of `-c` at 5 requests/second, or 10 with
-`-api`. This is deliberate: raising the worker count on a fast machine would
-otherwise raise the request rate and get the run throttled or rejected.
-
-## Examples
-
-Default run — neighbours figure and data tables:
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o myrun
-```
-
-Wider neighbourhood across several strains, ordered by a tree:
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o myrun \
-  -g 6 -m 5 --tree --tree_order -vb
-```
-
-Domain annotation with clan colouring:
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o myrun \
-  --domains --hmmdb pfam_db/Pfam-A.hmm --clans pfam_db/Pfam-A.clans.tsv.gz
-```
-
-Everything on, with an API key for faster downloads:
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o myrun -api YOUR_KEY \
-  --tree --tree_order --domains --hmmdb pfam_db/Pfam-A.hmm \
-  --tmhmm --signalp --sismis --cluster_rna -vb
-```
-
-Reuse genomes from a previous run instead of downloading again:
-
-```bash
-python3 FlaGs3.py -i input.txt -u you@example.com -o run1 -k
-python3 FlaGs3.py -i input.txt -u you@example.com -o run2 --use_local ./genomes
-```
-
----
-
-## Starting from one protein
-
-Instead of writing out a list of homologues yourself, you can hand FlaGs3 a single
-starting point and let BlastP find them, the same way webFlaGs does. Put **one** of
-these in a file and pass it with `-bi`/`--blast_input`:
-
-- a RefSeq protein accession (`WP_`, `NP_`, `YP_`, `XP_`, `AP_`), or
-- a protein sequence, as FASTA or as bare residues over any number of lines.
-
-```bash
-echo "WP_047256880.1" > start.txt
-python3 FlaGs3.py --blast_input start.txt -u you@example.com -o run1
-```
-
-You can also mark entries in the main input list: a line whose second column is
-`BLAST` is expanded instead of used directly, so a single file can mix ordinary
-accessions with things to expand.
-
-```
-WP_000028540.1	GCF_022493555.1
-WP_061892803.1
-WP_201476908.1	BLAST
-MKKATLARQLVDGT	BLAST
-```
-
-Every marked entry gets its own search and all the hits are pooled. `--blast_input`
-works exactly as before and can be combined with marked lines.
-
-The hits become the queries. They are appended to whatever `-i` holds, so you can
-mix a curated list with a BlastP expansion in one run; anything already in `-i` is
-not added twice, matching on accession regardless of version, and the assembly you
-paired it with is kept. `-i` is optional when `--blast_input` is given.
-
-**Controlling how many hits you get.** `--blast_hits` caps how many hits become
-queries (default 50, allowed 2-200) and `--blast_evalue` sets the cutoff (default
-`1e-5`). Hits are taken best-first, so `--blast_hits 10` gives you the ten closest
-homologues. The cap matters: each hit becomes a genome to download, a neighbourhood
-to extract and a row in the figure, so 200 hits is a much longer run than 20.
-
-```bash
-python3 FlaGs3.py --blast_input start.txt --blast_hits 20 --blast_evalue 1e-10 \
-    -u you@example.com -o run1
-```
-
-The hits that were used are written to `_blast_hits.tsv` with their E-values and
-descriptions, and your starting file is copied to `_blast_input.txt`.
-
-**Remote versus local.** The default `--blast_mode remote` needs nothing installed
-but a QBLAST search takes minutes, and much longer when NCBI is busy. FlaGs3 prints
-the job id and NCBI's own time estimate as soon as the job is accepted, then a
-progress line each minute while it waits, so a slow search is distinguishable from
-a hung one. The printed link opens the job on NCBI's site. `-bw`/`--blast_wait`
-caps the wait in minutes (default 60); giving up does not cancel the job, and the
-link stays valid. `--blast_mode local` runs `blastp` from NCBI
-BLAST+ against a local database and is far faster, but you need the binary and the
-database — `--blast_db` then takes the database name or path, and `-c/--cpu` sets
-`-num_threads`. An accession is resolved to its sequence through NCBI first, so
-both modes accept the same input.
-
-### Reading the defence figure
-
-Defence systems are drawn as bands behind the genes they span, labelled `D1`,
-`D2` and so on rather than by name -- a row often carries several and the names
-do not fit. The legend gives the full name for each number, and is split by the
-tool that made the call, so a system under both DefenseFinder and PadLoc is one
-both agreed on. It keeps the same number and colour in both panels.
-
-Bands that overlap are stacked in separate lanes within the row. Three thin bars
-means three systems sharing that stretch, not one wide one.
-
-### Which flag controls which tool
-
-Tools split by what they read, and that decides which flag sizes them:
-
-| reads | tools | sized by |
-|---|---|---|
-| genes and proteins | domain scan, DeepTMHMM, SignalP, DefenseFinder, PadLoc | `-g` or `-r` |
-| a stretch of DNA | Sismis, geNomad | `-sr`, whole genome without it |
-
-So `-g 5 -sr 50000` clusters and draws 11 genes while Sismis and geNomad each see
-100 kb around the query. Without `-sr` those two scan whole genomes, as they did
-before.
-
-If one tool needs a different span, put a number in the `scan_range` column of
-`tools_table.tsv` for its row, or `genome` to give that one tool whole genomes.
-That column overrides `-sr` for that tool only.
-
-### Choosing a clustering method
-
-Clustering compares every flanking protein against every other, so its cost grows
-with the square of how many there are. `-cm` chooses how the comparison is made.
-
-| method | what it is |
+| column | values |
 |---|---|
-| `jackhmmer` | the default and the reference: a profile HMM per query, three iterations |
-| `mmseqs_cluster` | MMseqs2 finds the homologous pairs instead |
-| `mmseqs_cluster_exhaustive` | MMseqs2 with its k-mer prefilter switched off |
+| name | file name of the figure |
+| layers | stages to draw, comma-separated: `cluster`, `cluster_rna`, `domains`, `features`, `sismis`, `genomad`, `defence` |
+| mode | `versatile` (default look) or `classic` (FlaGs) |
+| tree | `1` to add the tree panel and order rows by it |
+| numbers | `true` to label genes with their family |
+| palette | `bright`, `pastel`, `classic`, `colourblind`, `monochrome` |
+| monochrome | `true` to grey the gene fills so bands stand out |
+| numbering | `occurrence` (default): domain and band codes numbered by how often they occur; `appearance`: by first appearance |
+| font_size, row_height, gene_height, bases_per_pixel, pad, domain_height, label_step, arrow_head, min_gene_width, band_opacity, band_margin, tree_width | geometry; empty means the mode's default |
 
-Measured against jackhmmer on a real subfamily of 2560 flanking proteins, with
-jackhmmer taking 440 seconds:
+To pin single colours, put a `colours.tsv` in the run directory:
 
-| method | seconds | pairs jackhmmer also found | pairs it found that jackhmmer did not |
-|---|---|---|---|
-| `jackhmmer` | 440 | — | — |
-| `mmseqs_cluster` | 9.5 | 81% | 0.1% |
-| `mmseqs_cluster_exhaustive` | 12.6 | 86% | 0.6% |
+```
+#stage	category	colour
+cluster	family:3	#d40000
+sismis	T3SS	#0066cc
+```
 
-The direction of the error matters more than its size. MMseqs2 **splits families
-that jackhmmer keeps whole**; it does not merge families jackhmmer keeps apart.
-On a figure a split reads as two colours where there should be one, which is
-visible and recoverable. A merge would read as conservation that is not there.
+Categories are the values in each stage's `annotations.tsv`.
 
-So `jackhmmer` for anything going into a figure you will interpret closely, and
-`mmseqs_cluster` when a run is otherwise too large to finish. The exhaustive
-variant is quadratic in the input, which makes it useful up to a few thousand
-proteins and pointless above that.
+## 9. The tools table
 
-Iterating MMseqs2's profiles does not help — three iterations recovered 77.7% of
-the pairs against one iteration's 77.6% — so the shipped row asks for one.
-Loosening the E-value or turning off composition bias correction do raise recall,
-and both drop precision to between 40% and 70%, which is why neither is offered.
-
-`mmseqs_cluster` needs `mmseqs`; run `mmseqs_installer.sh`. If it is missing the
-run stops and says so rather than falling back to jackhmmer, because a run that
-quietly changed method would not be comparable with the one beside it.
-
-### Tuning a method
-
-Every setting lives in the method's `tools_table.tsv` row, in the `options`
-column, as `key=value` separated by semicolons:
+External programs and clustering settings are rows of a tab-separated
+table. The shipped one is the default; `flags3 install` writes your
+machine's paths into `~/.flags3/tools_table.tsv`, which is read
+automatically; `--tools FILE` points at another.
 
 ```
 #name	command	directory	scan_range	engine	options
 jackhmmer				jackhmmer	iterations=3;incE=1e-3;chunk=100;chunks_per_worker=16
-mmseqs_cluster	mmseqs easy-search {in} {in} {out} {tmp} ...			mmseqs	sensitivity=7.5;kmer=5;coverage=0.0;identity=0.0;evalue=1e-3
+mmseqs_cluster	/home/me/.flags3/envs/mmseqs/bin/mmseqs easy-search {in} {in} {out} {tmp} ...		mmseqs	sensitivity=7.5;coverage=0.5
+sismis	/home/me/.flags3/envs/sismis/bin/sismis run -g {in} -o {out}
 ```
 
-A row with an `engine` and no command is run through pyhmmer inside FlaGs3; one
-with both shells out, and its `options` fill the `{placeholders}` in the command.
-Adding a method is a row, not a code change. Override any of it in
-`tools_table.local.tsv`, which is not tracked.
+To change a clustering threshold, edit the `options` of its row; to use a
+tool installed elsewhere, put its absolute path in `command`. Rows can be
+edited but not invented: the set of tool names is fixed by the package.
 
-### When a paired assembly holds nothing
+## 10. When something goes wrong
 
-Giving a protein with an assembly means FlaGs3 uses that assembly and never asks
-NCBI where the protein lives. That is what makes a paired input fast. It also
-means that if the assembly has since been withdrawn, fails to download, or simply
-does not contain that accession, the protein is dropped with no second attempt —
-and a verbose run says so:
-
-```
->> 214 proteins whose paired assembly gave nothing; --remap looks them up again
-   through IPG
-```
-
-`--remap` does exactly that, once, after extraction. Both failure modes look the
-same at that point, so one pass covers a bad assembly and a good assembly missing
-the protein alike. It is off by default because it costs extra NCBI requests and
-possibly extra downloads; turn it on when the assembly column was compiled a
-while ago.
-
-Resolution through IPG goes out in chunks of 200 accessions. A single request for
-thousands comes back slowly, truncated, or not at all, and a truncated report is
-not an error — it looks exactly like those proteins having no assembly. Chunked,
-a failure costs only its own 200 and the count is reported.
-
-### Two tool tables
-
-`tools_table.tsv` holds the shipped defaults and is what the repository tracks.
-The installers never touch it. They write `tools_table.local.tsv` instead, which
-is git-ignored, and FlaGs3 reads the default table first and lets the local one
-override it row by row.
-
-That split exists so a path like
-`/home/you/miniconda3/envs/flags3-genomad/bin/genomad` stays on your machine
-instead of turning up in every diff. A row in the local table only needs the
-columns it changes; anything left blank falls back to the default.
-
-To see what is actually in effect, read both files, or run with `-dbg`, which
-records each external command as it runs.
-
-The clustering methods live in the same pair of files. A local row is how you
-point `mmseqs_cluster` at a binary that is not on `PATH`, or try a different
-sensitivity without editing the tracked table.
-
-## External tools
-
-Every program FlaGs3 shells out to is defined in `tools_table.tsv` beside the code:
-mafft, trimal, VeryFastTree, IQ-TREE, blastp, sismis, geNomad, DefenseFinder,
-PadLoc, MMseqs2, DeepTMHMM and SignalP. Edit a row to change how one is invoked,
-or point `--tools` at your own copy. Rows you leave out keep their defaults.
-
-The same table also carries the clustering methods, which is why it has `engine`
-and `options` columns that most rows leave empty.
-
-```
-#name	command	directory
-deeptmhmm	/opt/dtm-venv/bin/python3 predict.py --fasta {fasta} --output-dir {out}	/opt/DeepTMHMM
-signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast	/opt/signalp/bin
-```
-
-Two of these have installers, because they are licensed downloads with awkward
-dependencies. Request the packages first — SignalP 6 from DTU, DeepTMHMM by
-emailing `licensing@biolib.com` — then:
-
-```bash
-bash signalp_installer.sh   /path/to/signalp-6-package.tar.gz
-bash deeptmhmm_installer.sh /path/to/deeptmhmm-package.tar.gz
-```
-
-Each builds a conda environment (`flags3-signalp`, `flags3-deeptmhmm`) with the
-Python and PyTorch version that tool needs, and fills in its `tools_table.tsv` row
-with the resulting paths, so `--local_signalp` and `--local_tmhmm` work without
-further configuration.
-
-The DeepTMHMM installer finishes by running `predict.py` on the bundled sample,
-with its output shown rather than hidden. That both proves the install works and
-pulls any model weights it needs, so a later `--local_tmhmm` run does not stop to
-download anything. Set `DEEPTMHMM_TIMEOUT` (seconds, default 3600) if that run
-needs longer.
-
-SignalP 6 needs PyTorch below 2.0, and torch 1.x is built against NumPy 1.x, so
-the installer pins `numpy<2` as well and re-checks after installing the package —
-the package itself can pull NumPy 2 back in, which makes `signalp6` fail at import
-with a NumPy 1.x/2.x mismatch.
-
-DeepTMHMM's own `requirements.txt` pins `torch==1.5.0+cu92`, a CUDA 9.2 build from
-2018 that exists only on PyTorch's index. The installer uses the CPU build instead:
-cu92 predates current GPUs, and on one it fails inside cuBLAS as soon as it runs.
-Set `DEEPTMHMM_GPU=1` to use the CUDA build anyway. Either way the torch pin is
-stripped from the requirements before the rest are installed, so the two cannot
-conflict.
-
-`directory` is the working directory for that tool, and a relative program name is
-looked up inside it. That is what makes tools with their own Python environments
-workable: DeepTMHMM needs Python 3.8 and SignalP 6 needs PyTorch below 2.0, so
-neither can share the FlaGs3 environment — naming their interpreter in `command`
-avoids the clash.
-
-Placeholders substituted per tool: `{in}`, `{out}`, `{fasta}`, `{threads}`,
-`{mode}`, `{model}`, `{prefix}`, `{db}`, `{evalue}`, `{hits}`.
-
-## Redrawing the figures
-
-Rendering is the cheapest stage and the one most subject to taste, so it can be
-re-run on its own against a finished run — no downloads, no clustering:
-
-```bash
-python3 flags_redraw.py --data testout_20260819_125350
-```
-
-Every run calls `flags_redraw.py`, which copies the `visualisation_table.tsv` from
-the FlaGs3 directory into the output directory if there isn't one there already.
-That root copy is the standard set — edit it and every later run starts from your
-version, not a built-in one. That table *is* the figure list, and it carries
-every drawing parameter — nothing about a figure's look is buried in the code.
-Edit it and re-apply:
-
-```
-#name mode  tree_width  features_allowed  family_numbers  font_size row_height  gene_height gene_gap  bases_per_pixel pad domain_height label_step  arrow_head  min_gene_width  band_opacity
-neighbors versatile False cluster_rna TRUE  13  26  8 default 10.4  16  6 12  default default default
-tree  triangles 1 cluster_rna TRUE  13  24  20  1 False 16  default default default default default
-classic classic False cluster_rna TRUE  12  20  15  default 10.4  16  6 12  7 13  default
-```
-
-Each row produces `<prefix>_<name>.svg`. Any numeric cell may be `default`.
-
-| Column | Meaning |
-|---|---|
-| `name` | Figure name, used as the filename suffix. |
-| `mode` | `versatile` (the current look), `triangles` (fixed-width genes beside a tree), or `classic` (original FlaGs3: tighter rows, blunter arrows, numbers inside them, query protein solid black). |
-| `tree_width` | `False` for no tree, otherwise a multiplier on the default panel width. Works in **every** mode, not just `triangles`. |
-| `features_allowed` | Comma-separated: `cluster_rna`, `domains`, `tmhmm`, `signalp`, `sismis`, `monochrome`, `none`. `monochrome` turns off family colouring. Tokens compose: `sismis` only adds secretion bands, `domains` only adds domain wedges, and family colours and numbers stay unless you ask for `monochrome` or `family_numbers FALSE`. |
-| `family_numbers` | `TRUE`/`FALSE` — show family number labels and family colouring. They still appear when domains or secretion bands are drawn; family numbers are prefixed `G` on figures that also draw domains, so they are not confused with domain numbers; only plain family numbers take it, since `Q` and `R` already say what the family is. Under domain wedges the gene is filled in a pastel tint of its family colour, opaque so it hides any secretion band beneath and stays clear of the wedges on top, with the outline in the same tint. RNA, pseudogene and query outlines keep their full-strength accent. `FALSE` leaves genes as bare outlines when wedges are drawn, so the domains alone carry the colour. Domain and secretion numbers are unaffected either way. |
-| `font_size`, `row_height`, `gene_height`, `gene_gap`, `pad` | Type and layout sizes in px. |
-| `bases_per_pixel` | Genomic scale. `False` gives fixed-width genes. |
-| `domain_height`, `label_step`, `arrow_head`, `min_gene_width`, `band_opacity` | Domain wedge height, label spacing, classic arrow head length, smallest arrow width, secretion band opacity. Band height follows `gene_height`; the type label sits to the right of the row in black at 85% of `font_size`. |
-
-A gene that is more than one thing shows both: the fill gives the family, and the
-outline gives the rest — green for RNA, navy for a pseudogene, black for a query
-protein. A gene that is only its family is outlined in its own colour, and an
-unclustered one in mid grey. RNA genes, pseudogenes and queries also get a
-double-weight outline. So a clustered RNA gene keeps its family colour instead of
-losing it to the RNA styling.
-
-Every figure carries a legend for whatever it actually draws: domains, secretion
-systems, transmembrane helices and signal peptides, the query protein, RNA genes
-and pseudogenes, and a distance scale bar under any figure that shows a tree.
-Nothing is listed that is not in the picture.
-
-`--pdf` works the same way here, so a finished run can be turned into PDFs
-without redoing the analysis.
-
-`--format` takes a table from anywhere, `-o/--output` writes elsewhere, and
-`--write_table` drops a starting table into a run directory. Because the main run
-shells out to the same script, a redraw reproduces the run's figures exactly.
-`-no`/`--no_overlaps` leaves a family number out of a gene too small to hold it;
-by default it is drawn anyway, since knowing which family a small gene belongs to
-usually matters more than the overlap.
-
-A figure is skipped entirely when the data it needs is absent, which the
-`requires` column of `visualisation_table.tsv` names: a run without `--sismis`
-no longer writes an empty secretion figure. An empty column means always draw.
-
-`-nf`/`--no_figures` skips drawing entirely; `-f`/`--figures` points a run at your own table.
-
-A figure taller than `-fh`/`--figure_height` (default 16383 px, the canvas limit
-of Illustrator and librsvg) is written as `<name>_part1.svg`, `<name>_part2.svg`
-and so on, splitting the rows in order. Raise the limit if you only ever open
-figures in a browser, which has no such ceiling. Figures with a tree panel are
-never split, because the tree spans every row; those are left whole with a
-warning.
-
-## Output files
-
-`_runinfo.txt` and `_input.txt` are written before any work starts, so a run that
-fails partway still records what it was asked to do. Your `--api_key` value is
-masked in `_runinfo.txt`.
-
-`_console.log` is a transcript of the run. Everything printed to the terminal
-goes into it, and so does the output of the external tools FlaGs3 captures rather
-than shows — mafft, trimal, blastp, sismis, the local feature tools and the
-figure step. Lines that went to stderr, which is where `--debug` writes, carry a
-`[stderr] ` prefix, so `grep -v '^\[stderr\]'` gives back the plain terminal
-transcript and `grep '^\[stderr\]'` gives just the diagnostics. It is written
-as the run goes, and survives a crash or Ctrl-C.
-
-Every file is prefixed with the output directory's name, stamp included — a run
-with `-o results` writes `results_20260810_093134/results_20260810_093134_operon.tsv`.
-The tables below drop the stamp and write `results_...` for readability.
-
-**Figures**
-
-| File | Contents |
-|---|---|
-| `results_neighbors.svg` | the main diagram: one row per query, genes as arrows coloured by family |
-| `results_tree.svg` | same rows aligned to a phylogenetic tree (`--tree`) |
-| `results_tree.nwk` | the tree in Newick format |
-| `tree/` | the alignment, the trimmed alignment, the Newick tree and the exact alignment/trimming/tree commands used |
-| `results_domains.svg` | neighbourhoods with domains, TM regions and signal peptides drawn on |
-| `results_secretion.svg` | neighbourhoods with predicted secretion systems marked (`--sismis`) |
-
-**Tables**
-
-| File | Contents |
-|---|---|
-| `results_operon.tsv` | one row per flanking gene: query, genome, family, strand, offset, coordinates, length, contig, product |
-| `results_clusters.tsv` | each family and its members |
-| `results_outdesc.txt` | families as readable blocks: `family(occurrences)`, accession, product description |
-| `results_features.tsv` | transmembrane and signal-peptide regions per protein (`--tmhmm`/`--signalp`), so the figures can be redrawn later |
-| `visualisation_table.tsv` | the figure list for this run; edit and re-apply with `flags_redraw.py` |
-| `results_domains.tsv` | one row per domain hit: protein, family, domain, Pfam accession, clan, coordinates, E-value (`--domains`); with `--interpro`, also the InterPro entry, name, type, characterisation status, informativeness and a one-line interpretation |
-| `results_clusterhits.tsv` | per-protein hit lists from whichever clustering method ran — the audit trail behind the families |
-| `results_speciesInfo.txt` | genome and organism per query row |
-| `results_QueryStatus.txt` | which genomes each query resolved to, and whether it produced a row |
-| `results_accessionIssues.txt` | queries that produced nothing, and why |
-| `results_flankgene_Report.log` | each neighbourhood as a compact family chain |
-| `results_secretion.tsv` | Sismis hits and which neighbourhoods they overlap (`--sismis`) |
-| `results_defence.tsv` | each defence system, the genes it spans, which tool called it, and which neighbourhoods it overlaps (`--defensefinder`, `--padloc`) |
-| `results_defence_diagnostics.txt` | per-tool status and how many neighbourhoods were scanned |
-| `results_genomad.tsv` | geNomad's proviruses and plasmids, each labelled with what it was called, and which neighbourhoods it overlaps (`--genomad`) |
-| `results_genomad_diagnostics.txt` | per-genome geNomad status, windows scanned, and how much of the genome that came to (`--genomad`) |
-| `results_sismis_diagnostics.txt` | per-genome Sismis status, how many windows were scanned, and how much of the genome that came to (`--sismis`) |
-| `results_runinfo.txt` | how the run was invoked: version, host, command line, and every option split into those you set and those left at default |
-| `results_window.tsv` | every gene inside the scan window: coordinates, strand, product, and whether it was in the drawn neighbourhood (`-sr`) |
-| `results_window.fasta` | those genes' proteins, each header carrying the query, assembly, contig, length, and position relative to the query gene (`-sr`) |
-| `results_rangeReport.tsv` | per row: contig length, how much sequence was available up and downstream, how much the window actually reached, which sides were truncated, gene counts, and the span handed to the scanning tools |
-| `results_console.log` | everything the run printed, plus the output of external tools that never reached the terminal |
-| `results_input.txt` | a copy of the input list, so the results stay self-contained |
-| `results_blast_hits.tsv` | BlastP hits used as queries: accession, E-value, bitscore, description |
-| `results_blast_accessions.txt` | the same hits as a plain accession list — pass it to `-i` to repeat the run without searching again |
-| `results_blast_input.txt` | a copy of the BlastP starting accession or sequence (`--blast_input`) |
-
-**Sequences**
-
-| File | Contents |
-|---|---|
-| `results_tree.fasta` | one query protein per row, named by row id — the tree input |
-| `results_flankgene.fasta` | the flanking proteins, headers `accession\|product` |
-| `results_all.fasta` | both of the above in one file |
-
-### Reading the figure
-
-Genes are arrows pointing in their direction of transcription, normalised so the
-query always points right. Arrows sharing a colour and number are one family.
-The query itself is outlined in black at the centre of each row.
-
-Grey means the gene had no family (a singleton). RNA genes keep a green outline,
-pseudogenes navy.
-
-### Reading `results_operon.tsv`
-
-The `query` column is the query protein and `assembly` is the genome it was found
-in. They are separate columns because one protein appearing in several genomes
-produces one row per genome, so the pair — not the protein alone — identifies a
-row. The `accession` column is the flanking gene itself. `offset` is the position
-relative to the query: `0` is the query, negative upstream, positive downstream.
-`contig` is the sequence the gene lies on, which is what Sismis hits are matched
-against.
-
-With `--tree_order`, rows appear in tree leaf order rather than input order.
-
----
-
-## When something goes wrong
-
-**"No flanking neighbourhoods could be extracted for any query."**
-Nothing matched. Check `results_accessionIssues.txt` — it separates *no genome
-resolved* from *genome found but the protein was not in it*. The second usually
-means the accession does not appear in that genome's annotation, which for
-MGnify genomes normally means the locus tag is wrong.
-
-**Queries silently missing from the figure.**
-`results_QueryStatus.txt` lists every query and whether it produced a row.
-
-**Downloads look stuck.**
-Run with `-vb`; downloads report as they complete. Requests are rate-limited
-(5/s, or 10/s with `-api`) so a large list takes a while by design — this keeps
-NCBI and EBI from rejecting the run.
-
-**The diagram is unexpectedly wide.**
-A neighbour lying very far from the query stretches the canvas. This normally
-means a fragmented assembly where the query sits near a contig edge.
-
-**geNomad says `Missing argument 'DATABASE'` or cannot read its database.**
-The path in the third column of the `genomad` row of `tools_table.tsv` must be
-the directory holding `genomad_marker_metadata.tsv`, not the directory holding
-*that*. `genomad download-database DEST` creates `DEST/genomad_db`, so the path
-you want is usually one level further in than the one you gave it. FlaGs3
-descends that level for you and says so, but the table is clearer if it points
-straight at the database.
-
-**A tool reports its own dependencies as missing.**
-Tools installed into a conda environment are run by absolute path, which does not
-activate that environment. FlaGs3 puts the tool's own directory on its `PATH` so
-sibling programs are found, but a dependency installed somewhere else entirely
-still will not be. Check it is in the same environment: `conda list -n
-flags3-genomad mmseqs2`.
-
-**A tool produced nothing and the warning does not say why.**
-Read `results_console.log`. External tools are run with their output captured,
-so their own error messages never reach the terminal — the log has them in full,
-under a `--- toolname (exit N) ---` header.
-
-**A tool was skipped.**
-Warnings name the missing dependency and the install command. The run continues
-without that feature.
+- **"no query could be resolved"**: check `fetch/queries.tsv` for the
+  reason per query and `fetch/failures.tsv` for network errors. IPG needs
+  a valid email in `-u`.
+- **A stage says failed**: `<stage>/status.tsv` has the error and
+  `<stage>/traceback.txt` the full trace. Most often the tool is not
+  installed: `flags3 install <name>`.
+- **A genome file is broken** (an interrupted download): it is detected
+  and downloaded again on the next run. To force it, delete the file from
+  `~/.flags3/genomes/`.
+- **Figures look wrong after rerunning a stage**: `report` and `figures`
+  read the other stages' tables and need rerunning too.
+- **Everything printed** is in `console.log`, including every external
+  command and what it wrote to stderr.

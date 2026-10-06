@@ -158,6 +158,7 @@ def _run(args) -> int:
 	config = run.config()
 	config.set("inputs", names)
 	config.set("blast_inline", inline)
+	config.set("no_timestamp", bool(args.no_timestamp))
 	if args.no_cache:
 		args.genomes = str(run.path / "genomes")
 	_imply(args)

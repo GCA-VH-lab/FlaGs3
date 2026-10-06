@@ -9,7 +9,7 @@ from flags3.schema import MISSING, Annotation
 
 TABLE_NAME = "visualisation_table.tsv"
 STAGE_TITLES = {
-	"cluster": "Gene families", "cluster_rna": "RNA families", "domains": "Domains",
+	"cluster": "Protein clusters", "cluster_rna": "RNA clusters", "domains": "Domains",
 	"features": "Protein features", "sismis": "Secretion systems", "genomad": "Mobile elements",
 	"defence": "Defence systems",
 }

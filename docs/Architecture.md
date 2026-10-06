@@ -270,6 +270,9 @@ Each writes:
 Labels follow 2.3.0: a family is labelled only if its members occur more
 than once across rows; labelled families are ordered by occurrence count;
 a family holding a query is `Q<n>`, an RNA family `R<n>`, the rest `1, 2, …`.
+Within a query family the proteins that were in the input list carry `Q`
+and every other member — a homologue met as someone else's flanking gene —
+carries `q`; same colour and number, the case says which arrows are queries.
 Unlabelled families get no annotation, so the renderer draws them in its
 default style without knowing why. Family numbers in `families.tsv` are
 ordered by size and are stable identifiers; labels are what the figure shows.
@@ -535,15 +538,22 @@ also draws domains, plain numbers get a `G` prefix so they don't collide
 with the domain codes. Domains are numbered per category and listed in the
 Domains legend panel; bands carry `S1`, `M1`, `D1` codes with their panels.
 
-Beside the figures, `figures/` gets three companion files written by the
-same stage from the same data: `legend.tsv` (stage, code, name,
-occurrences — every domain and band code used across the run's figures),
-`families_legend.txt` (the `_outdesc` layout: label(occurrences), accession,
-product per family, with subfamily letters), and `systems.tsv` (one line
+Beside the figures, `figures/` gets companion files written by the same
+stage from the same data: `legend.tsv` (stage, code, name, occurrences —
+every domain and band code used across the run's figures),
+`protein_clusters_legend.txt` and `rna_clusters_legend.txt` (the `_outdesc`
+layout: label(occurrences), accession, product per cluster, members ordered
+by subcluster letter, then bridges, then `?`, and by occurrence within a
+letter), and `systems.tsv` (one line
 per drawn band: stage, code, system name, assembly, contig, span, the rows
 it overlaps, the genes inside it as `accession(label)`, and their
 products). Codes there are assigned over the whole run with the first
 figure's numbering, so they match what the figures show.
+
+Files in `figures/` and `report/` are named with the run's start time
+(`RunDir.stamp`, `YYMMDD_HHMMSS`) unless the run was made with `-nt`, in
+which case names are plain and stable for scripts. Stage tables are never
+stamped; stages address each other by fixed names.
 
 Figures taller than `-fh` are split by rows into SVG parts; a figure with a
 tree panel is never split. The PDF of a split figure is one file rendered

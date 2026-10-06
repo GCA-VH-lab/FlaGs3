@@ -41,6 +41,8 @@ class FamilyTables:
 		base = self.labels.get(index, MISSING)
 		if base == MISSING:
 			return base
+		if base.startswith("Q") and accession not in self.queries:
+			base = "q" + base[1:]
 		return base + self.letters(index, accession)
 
 	def member_category(self, index: int, accession: str) -> str:

@@ -16,7 +16,7 @@ def _run(tmp_path):
 	(run.input_dir / "list.txt").write_text("WP_004\nWP_999\nWP_009\n")
 	cfg = run.config()
 	cfg.update({"inputs": "list.txt", "genomes": str(genomes), "offline": True, "gene": 2,
-		"cluster_method": "jackhmmer", "cpu": 1})
+		"cluster_method": "jackhmmer", "cpu": 1, "no_timestamp": True})
 	cfg.save()
 	runner = Runner(run, cfg, report=lambda m: None)
 	for stage in (Fetch(), Extract(), Cluster(), Report()):

@@ -108,18 +108,19 @@ class Report(Stage):
 
 	def run(self, run, config, out: Path) -> None:
 		t = RunTables(run)
-		self.neighbourhoods(t, out)
-		self.queries(t, out)
-		self.families(t, out)
-		self.fastas(t, out)
-		self.summary(run, t, out)
+		name = lambda n: out / run.output_name(config, n)
+		self.neighbourhoods(t, name)
+		self.queries(t, name)
+		self.families(t, name)
+		self.fastas(t, name)
+		self.summary(run, t, name)
 		legacy = out / LEGACY
 		legacy.mkdir(exist_ok=True)
 		prefix = run.name
 		Legacy(t, legacy, prefix).write_all()
 		note("report: {} rows, {} queries, legacy tables under report/{}".format(len(t.rows), len(t.input_queries()), LEGACY))
 
-	def neighbourhoods(self, t: RunTables, out: Path) -> None:
+	def neighbourhoods(self, t: RunTables, name) -> None:
 		rows = []
 		for row_id, genes in t.by_row.items():
 			query, assembly = split_row_id(row_id)
@@ -127,9 +128,9 @@ class Report(Stage):
 				rows.append(NeighbourhoodRow(row_id, query, assembly, t.species(row_id) or MISSING, g.offset, g.accession,
 					t.family(g.accession), g.contig, g.start, g.end, g.strand, g.end - g.start + 1, g.is_rna,
 					g.product, ";".join(t.domains.get(g.accession, [])) or MISSING, g.contig_edge))
-		NeighbourhoodRow.write(out / NeighbourhoodRow.FILE, rows)
+		NeighbourhoodRow.write(name(NeighbourhoodRow.FILE), rows)
 
-	def queries(self, t: RunTables, out: Path) -> None:
+	def queries(self, t: RunTables, name) -> None:
 		rows = []
 		for query in t.input_queries():
 			targets = [x for x in t.targets if x.query == query]
@@ -141,28 +142,28 @@ class Report(Stage):
 				reasons = [u.reason for u in t.unmatched if u.query == query] or [x.status for x in targets if x.status != "ok"]
 				status = reasons[0] if reasons else "no neighbourhood"
 			rows.append(QueryStatus(query, ";".join(assemblies) or MISSING, len(found), status))
-		QueryStatus.write(out / QueryStatus.FILE, rows)
+		QueryStatus.write(name(QueryStatus.FILE), rows)
 
-	def families(self, t: RunTables, out: Path) -> None:
-		with open(out / "families.tsv", "w") as handle:
+	def families(self, t: RunTables, name) -> None:
+		with open(name("families.tsv"), "w") as handle:
 			handle.write("family\tlabel\tsize\toccurrences\tsubfamilies\tbridges\tproduct\tmembers\n")
 			for f in t.families:
 				product = next((t.products[a] for a in f.accessions if t.products.get(a)), MISSING)
 				handle.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(f.family, f.label, f.size, f.occurrences,
 					f.subfamilies, f.bridges, product, f.members))
 
-	def fastas(self, t: RunTables, out: Path) -> None:
+	def fastas(self, t: RunTables, name) -> None:
 		def describe(accession: str) -> str:
 			product = t.products.get(accession, "")
 			return "{} {}".format(accession, product) if product else accession
 
 		flanking = [(describe(a), s) for a, s in sorted(t.proteins.items()) if a not in t.query_accessions]
 		queries = [("{} {}".format(row, t.species(row)).rstrip(), s) for row, s in t.queries.items()]
-		fasta.write(out / "flanking.faa", flanking)
-		fasta.write(out / "queries.faa", queries)
-		fasta.write(out / "all.faa", queries + flanking)
+		fasta.write(name("flanking.faa"), flanking)
+		fasta.write(name("queries.faa"), queries)
+		fasta.write(name("all.faa"), queries + flanking)
 
-	def summary(self, run, t: RunTables, out: Path) -> None:
+	def summary(self, run, t: RunTables, name) -> None:
 		info = run.info()
 		started = time.strptime(info.get("started"), "%Y-%m-%d %H:%M:%S") if info.get("started") else None
 		elapsed = time.time() - time.mktime(started) if started else None
@@ -191,7 +192,7 @@ class Report(Stage):
 			lines.append("{:12} {:9} {:>7}{}".format(stage, status.state or "-", status.get("seconds", "-"),
 				"   " + status.get("error") if status.get("error") else ""))
 		lines.append("{:12} {:9} {:>7}".format("stages total", "", "{:.2f}".format(total)))
-		(out / "run_summary.txt").write_text("\n".join(lines) + "\n")
+		name("run_summary.txt").write_text("\n".join(lines) + "\n")
 
 
 def _human(seconds: float) -> str:

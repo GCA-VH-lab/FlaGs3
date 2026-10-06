@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 
 from flags3.render.data import RunData
@@ -6,8 +7,10 @@ from flags3.render.style import BAND_CODES, BAND_ORDER, STAGE_TITLES, Colours
 from flags3.schema import MISSING, Annotation, Gene
 
 LEGEND = "legend.tsv"
-FAMILIES_LEGEND = "families_legend.txt"
+PROTEIN_LEGEND = "protein_clusters_legend.txt"
+RNA_LEGEND = "rna_clusters_legend.txt"
 SYSTEMS = "systems.tsv"
+LETTERS = re.compile(r"^[QqR]?\d+")
 
 
 def figure_label(label: str) -> str:
@@ -26,10 +29,14 @@ class Companions:
 			elif stage == "domains":
 				self.codes[stage] = {c: str(i + 1) for i, c in enumerate(table)}
 
-	def write_all(self, out: Path) -> list[Path]:
-		written = [self.legend(out / LEGEND), self.families_legend(out / FAMILIES_LEGEND)]
+	def write_all(self, out: Path, stamped=lambda name: name) -> list[Path]:
+		written = [self.legend(out / stamped(LEGEND))]
+		if "cluster" in self.data.present:
+			written.append(self.clusters_legend(out / stamped(PROTEIN_LEGEND), "cluster"))
+		if "cluster_rna" in self.data.present:
+			written.append(self.clusters_legend(out / stamped(RNA_LEGEND), "cluster_rna"))
 		if any(s in self.data.annotations for s in BAND_ORDER):
-			written.append(self.systems(out / SYSTEMS))
+			written.append(self.systems(out / stamped(SYSTEMS)))
 		return written
 
 	def legend(self, path: Path) -> Path:
@@ -49,23 +56,31 @@ class Companions:
 					writer.writerow([stage, code, name, counts.get(category, 0)])
 		return path
 
-	def families_legend(self, path: Path) -> Path:
-		label_of: dict[str, str] = {}
+	def clusters_legend(self, path: Path, stage: str) -> Path:
 		occurrences: dict[str, int] = {}
 		products: dict[str, str] = {}
 		for row in self.data.genes.values():
 			for g in row:
 				occurrences[g.accession] = occurrences.get(g.accession, 0) + 1
 				products.setdefault(g.accession, "" if g.product == MISSING else g.product)
+		label_of: dict[str, str] = {}
 		groups: dict[str, list[str]] = {}
-		for stage in ("cluster", "cluster_rna"):
-			for a in self.data.annotations.get(stage, []):
-				label_of[a.subject] = a.label
-				groups.setdefault(a.category.split("/")[0], []).append(a.subject)
+		for a in self.data.annotations.get(stage, []):
+			label_of[a.subject] = a.label
+			groups.setdefault(a.category.split("/")[0], []).append(a.subject)
+
+		def letters(acc: str) -> str:
+			return LETTERS.sub("", label_of.get(acc, ""))
+
+		def rank(acc: str):
+			tail = letters(acc)
+			kind = 0 if len(tail) == 1 and tail != "?" else (2 if tail == "?" else (1 if tail else 0))
+			return (kind, tail, -occurrences.get(acc, 0), acc)
+
 		ordered = sorted(groups.items(), key=lambda kv: (-sum(occurrences.get(m, 0) for m in kv[1]), kv[1][0]))
 		with open(path, "w", encoding="utf-8") as out:
 			for _, members in ordered:
-				for acc in members:
+				for acc in sorted(members, key=rank):
 					out.write("{}({})\t{}\t{}\n".format(label_of.get(acc, "-"), occurrences.get(acc, 0), acc, products.get(acc, "")))
 				out.write("\n\n")
 		return path

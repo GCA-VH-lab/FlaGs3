@@ -38,21 +38,21 @@ class Figures(Stage):
 			figures = parts_for(data, spec, colours, max_height, config.flag("no_overlaps"))
 			for i, figure in enumerate(figures):
 				name = spec.name if len(figures) == 1 else "{}_part{}".format(spec.name, i + 1)
-				path = out / (name + ".svg")
+				path = out / run.output_name(config, name + ".svg")
 				path.write_text(figure.render())
 				written.append(path)
 			if config.flag("pdf"):
 				if not pdf.available():
 					print("Warning: --pdf needs cairosvg (pip install cairosvg); SVG only.")
 				elif len(figures) == 1:
-					pdf.convert(out / (spec.name + ".svg"), out / (spec.name + ".pdf"))
+					pdf.convert(out / run.output_name(config, spec.name + ".svg"), out / run.output_name(config, spec.name + ".pdf"))
 				else:
 					whole = out / "raw" / (spec.name + "_whole.svg")
 					whole.parent.mkdir(exist_ok=True)
 					whole.write_text(Figure(data, spec, Colours(spec.palette, overrides, spec.monochrome, spec.numbering),
 						no_overlaps=config.flag("no_overlaps")).render())
-					pdf.convert(whole, out / (spec.name + ".pdf"))
-		companions = Companions(data, specs[0].numbering if specs else "occurrence").write_all(out)
+					pdf.convert(whole, out / run.output_name(config, spec.name + ".pdf"))
+		companions = Companions(data, specs[0].numbering if specs else "occurrence").write_all(out, lambda name: run.output_name(config, name))
 		note("{} figures written, with {}".format(len(written), ", ".join(p.name for p in companions)))
 		if not written:
 			raise RuntimeError("no figure had anything to draw")

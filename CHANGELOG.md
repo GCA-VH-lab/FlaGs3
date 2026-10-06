@@ -49,6 +49,13 @@ A rewrite. Same analysis, same figures, different construction.
 - DefenseFinder and PadLoc are called on the `-sr` span's genes when `-sr`
   is given, not only on the drawn neighbourhood.
 
+- Files in `figures/` and `report/` carry the run's start time in their
+  names; `-nt` runs keep plain names.
+- `families_legend.txt` is `protein_clusters_legend.txt` (plus
+  `rna_clusters_legend.txt`), members ordered by subcluster.
+- In a query cluster, `Q` marks proteins that were in the input list and
+  `q` the other members.
+
 ### Migration from 2.3.0
 
 | 2.3.0 | 3.0 |

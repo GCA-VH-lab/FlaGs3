@@ -13,6 +13,7 @@ class RunData:
 	tree_order: list[str]
 	newick: str
 	annotations: dict[str, list[Annotation]] = field(default_factory=dict)
+	present: set = field(default_factory=set)
 
 	@classmethod
 	def load(cls, run) -> "RunData":
@@ -36,7 +37,7 @@ class RunData:
 				found = Annotation.read(path)
 				if found:
 					annotations[stage] = found
-		return cls(genes, rows, windows, order, tree_order, newick, annotations)
+		return cls(genes, rows, windows, order, tree_order, newick, annotations, {s for s in run.stages() if run.has(s)})
 
 	def labels(self) -> dict[str, str]:
 		per_query: dict[str, int] = {}

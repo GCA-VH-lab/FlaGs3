@@ -366,7 +366,7 @@ rerun automatically; run them yourself in that order.
 | row_id | `query|assembly` |
 | offset | position relative to the query in the query's reading direction; negative is upstream |
 | accession | protein accession, or `pseudogene*` |
-| family | the family label, as on the figure: `Q1` holds a query, `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab`; a protein only ever seen at the end of a contig gets `Q1?`, since it may be incomplete |
+| family | the family label, as on the figure: `Q1` is a protein that was in your input list, `q1` another member of the same cluster found as a flanking gene (same colour, same number), `R1` is an RNA family, plain numbers are shared flanking families, `-` is a singleton. A family joined only through a fusion or a shared domain is split into subfamilies of full-length homologues, `Q1a`, `Q1b`; the bridging protein gets both letters, `Q1ab`; a protein only ever seen at the end of a contig gets `Q1?`, since it may be incomplete |
 | contig_edge | `true` when the gene is the first or last on its contig |
 | strand | the gene's strand on the contig (the figure flips rows so the query points right) |
 | domains | domain names on the protein, in order, when `-d` was on |
@@ -411,11 +411,19 @@ outline, pseudogenes a blue one.
 A figure is drawn only when a stage it shows produced something. Every
 figure has a legend panel per layer; a domain panel can be long.
 
-Three files sit beside the figures: `legend.tsv` (every domain and band
-code with its name), `families_legend.txt` (each family's members with
+Three or four files sit beside the figures: `legend.tsv` (every domain and
+band code with its name), `protein_clusters_legend.txt` and, with `-cr`,
+`rna_clusters_legend.txt` (each cluster's members in subcluster order with
 their labels and products, the old `_outdesc` layout), and `systems.tsv`
 (each drawn defence, secretion or mobile-element system with the genes
-inside it and the families they belong to).
+inside it and the clusters they belong to).
+
+Every file in `figures/` and `report/` carries the run's start time in its
+name (`neighbors_261006_093847.svg`, `neighbourhoods_261006_093847.tsv`),
+so a figure and its legend from one run match by name when several runs
+are open. A run made with `-nt` has no timestamp anywhere — plain,
+predictable names for scripts. The stage tables (`extract/genes.tsv`, …)
+are never stamped.
 
 ## 8. Your own figures
 

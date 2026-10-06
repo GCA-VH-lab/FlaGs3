@@ -143,13 +143,14 @@ def test_subfamilies_split_on_a_fusion(tmp_path):
 	assert [sorted(g) for g in groups] == [["t1", "t2", "t3", "t4"], ["f", "u1", "u2"]]
 	assert cluster.subfamilies(thif, full, contains) == ({}, [])
 	tables = FamilyTables([members], adjacency, {m: 2 for m in members}, {"t1"}, "", "jackhmmer", full, contains)
-	assert tables.member_label(0, "t2") == "Q1a" and tables.member_label(0, "f") == "Q1ab" and tables.member_label(0, "u1") == "Q1b"
+	assert tables.member_label(0, "t1") == "Q1a" and tables.member_label(0, "t2") == "q1a"
+	assert tables.member_label(0, "f") == "q1ab" and tables.member_label(0, "u1") == "q1b"
 	assert tables.member_category(0, "t2") == "family:1/a" and tables.member_category(0, "f") == "family:1"
 	tables.write(tmp_path)
 	fam = Family.read(tmp_path / Family.FILE)[0]
 	assert fam.subfamilies == "a:4;b:3" and fam.bridges == "f:ab"
 	ann = {a.subject: a for a in Annotation.read(tmp_path / Annotation.FILE)}
-	assert ann["u2"].category == "family:1/b" and ann["u2"].label == "Q1b"
+	assert ann["u2"].category == "family:1/b" and ann["u2"].label == "q1b"
 
 
 def test_held_core_lends_its_letter_only_when_it_partitions():
@@ -187,10 +188,10 @@ def test_contig_edge_proteins_get_question_mark(tmp_path):
 	contains = {m: set() for m in members}
 	tables = FamilyTables([members], {m: set() for m in members}, {m: 2 for m in members}, {"t1"}, "", "jackhmmer",
 		full, contains, edge={"t4"})
-	assert tables.member_label(0, "t3") == "Q1a" and tables.member_label(0, "t4") == "Q1?"
+	assert tables.member_label(0, "t3") == "q1a" and tables.member_label(0, "t4") == "q1?"
 	assert tables.member_category(0, "t4") == "family:1" and tables.member_category(0, "t3") == "family:1/a"
 	tables.write(tmp_path)
 	fam = Family.read(tmp_path / Family.FILE)[0]
 	assert fam.bridges == "t4:?"
 	plain = FamilyTables([thif], {m: set() for m in thif}, {m: 2 for m in thif}, {"t1"}, "", "jackhmmer", full, contains, edge={"t4"})
-	assert plain.member_label(0, "t4") == "Q1"
+	assert plain.member_label(0, "t4") == "q1" and plain.member_label(0, "t1") == "Q1"

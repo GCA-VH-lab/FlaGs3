@@ -123,8 +123,10 @@ def test_classic_and_parts(tmp_path):
 def test_figures_stage(tmp_path):
 	run, runner = _run(tmp_path)
 	assert runner.execute(Figures())
+	stamp = run.stamp()
 	names = sorted(p.name for p in run.stage_dir("figures").glob("*.svg"))
-	assert names == ["classic.svg", "neighbors.svg"]
+	assert names == ["classic_{}.svg".format(stamp), "neighbors_{}.svg".format(stamp)]
+	assert run.stamped("x.svg", enabled=False) == "x.svg" and run.stamped("legend.tsv").endswith("_{}.tsv".format(stamp))
 	cfg = run.config()
 	cfg.set("no_figures", True)
 	cfg.save()
@@ -136,7 +138,7 @@ def test_figures_stage(tmp_path):
 	cfg.save()
 	runner.config = cfg
 	assert runner.execute(Figures())
-	assert sorted(p.name for p in run.stage_dir("figures").glob("*.svg")) == ["mine.svg"]
+	assert sorted(p.name for p in run.stage_dir("figures").glob("*.svg")) == ["mine_{}.svg".format(stamp)]
 
 
 def test_occurrence_numbering():
@@ -163,14 +165,14 @@ def test_companion_files(tmp_path):
 	_fake_stage(run, "domains", [Annotation("WP_004", "aa", 10, 100, "wedge", "PF1", "Dom_1", "pfam", 1e-5)])
 	_fake_stage(run, "defence", [Annotation("GCF_TEST|A", "bp", 2000, 3500, "band", "RM", "RM_Type_I", "padloc", None)])
 	assert runner.execute(Figures())
-	legend = run.stage_file("figures", "legend.tsv").read_text().splitlines()
+	legend = run.stage_file("figures", run.stamped("legend.tsv")).read_text().splitlines()
 	assert legend[0] == "stage\tcode\tname\toccurrences"
 	assert "domains\t1\tPF1 (Dom_1)\t1" in legend and "defence\tD1\tRM (RM_Type_I)\t1" in legend
-	systems = run.stage_file("figures", "systems.tsv").read_text().splitlines()
+	systems = run.stage_file("figures", run.stamped("systems.tsv")).read_text().splitlines()
 	assert systems[0].startswith("stage\tcode\tsystem")
 	line = systems[1].split("\t")
 	assert line[:3] == ["defence", "D1", "RM_Type_I"] and "WP_004(" in line[8] and "WP_005(" in line[8]
 	from flags3.render.companions import figure_label
 	assert figure_label("5") == "G5" and figure_label("12a") == "G12a" and figure_label("Q1ab") == "Q1ab" and figure_label("-") == "-"
 	assert "WP_004|GCF_TEST" in line[7] and "query protein" in line[9]
-	assert run.stage_file("figures", "families_legend.txt").exists()
+	assert run.stage_file("figures", run.stamped("protein_clusters_legend.txt")).exists()

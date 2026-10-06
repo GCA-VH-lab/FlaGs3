@@ -154,6 +154,22 @@ class RunDir:
 	def info(self) -> KeyValueFile:
 		return KeyValueFile(self.run_file).load()
 
+	def stamp(self) -> str:
+		started = self.info().get("started") or ""
+		try:
+			return time.strftime("%y%m%d_%H%M%S", time.strptime(started, "%Y-%m-%d %H:%M:%S"))
+		except ValueError:
+			return "unstamped"
+
+	def stamped(self, name: str, enabled: bool = True) -> str:
+		if not enabled:
+			return name
+		stem, dot, ext = name.rpartition(".")
+		return "{}_{}.{}".format(stem, self.stamp(), ext) if dot else "{}_{}".format(name, self.stamp())
+
+	def output_name(self, config, name: str) -> str:
+		return self.stamped(name, not config.flag("no_timestamp"))
+
 	def config(self) -> Config:
 		return Config(self.config_file).load()
 

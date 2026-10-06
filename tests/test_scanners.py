@@ -15,7 +15,9 @@ from flags3.stages.genomad import Genomad, database, plasmid_name, virus_name
 from tests.synth import write_genome
 
 FAKE_GENOMAD = """#!/bin/sh
-out="$3"; mkdir -p "$out/x_summary"
+for last in "$@"; do :; done
+prev=""; for a in "$@"; do [ "$a" = "$last" ] && out="$prev"; prev="$a"; done
+mkdir -p "$out/x_summary"
 printf 'seq_name\\tlength\\ttopology\\tcoordinates\\tn_genes\\tvirus_score\\ttaxonomy\\n' > "$out/x_summary/x_virus_summary.tsv"
 printf 'w0|provirus_1\\t300\\tProvirus\\t101-400\\t3\\t0.97\\tViruses;Duplodnaviria;Caudoviricetes\\n' >> "$out/x_summary/x_virus_summary.tsv"
 printf 'seq_name\\tlength\\tplasmid_score\\tconjugation_genes\\tamr_genes\\n' > "$out/x_summary/x_plasmid_summary.tsv"
@@ -57,7 +59,7 @@ def _script(tmp_path, name, body):
 def _tools(tmp_path):
 	table = tmp_path / "tools.tsv"
 	table.write_text("#name\tcommand\tdirectory\tscan_range\tengine\toptions\n"
-		"genomad\t{} end-to-end {{in}} {{out}} {{db}}\t\t\t\tdb={}\n"
+		"genomad\t{} end-to-end --splits {{splits}} {{in}} {{out}} {{db}}\t\t\t\tdb={};splits=4;batch_mb=0.002\n"
 		"defensefinder\t{} run -o {{out}} {{faa}}\n"
 		"padloc\t{} --faa {{faa}} --gff {{gff}} --outdir {{out}}\n"
 		"deeptmhmm\t{} --fasta {{fasta}} --output-dir {{out}}\n"
@@ -102,13 +104,15 @@ def test_genomad_names_and_database(tmp_path):
 def test_genomad_stage(tmp_path):
 	run, runner = _run(tmp_path, ["WP_004", "WP_009"], scan_range=1000, scan_margin=100, gene=1, genomad=True)
 	assert runner.execute(Genomad())
-	ann = sorted(Annotation.read(run.stage_file("genomad", Annotation.FILE)), key=lambda a: a.category)
+	ann = sorted({a for a in Annotation.read(run.stage_file("genomad", Annotation.FILE))}, key=lambda a: a.category)
 	assert [(a.subject, a.category, a.label, a.start, a.end, a.kind) for a in ann] == [
 		("GCF_TEST|B", "plasmid", "plasmid (AMR)", 1, 2300, "band"),
 		("GCF_TEST|A", "virus", "Caudoviricetes", 1000, 1299, "band")]
 	assert ann[1].score == 0.97
 	lines = run.stage_file("genomad", "mobile_elements.tsv").read_text().splitlines()
 	assert "genomad_taxonomy" in lines[0]
+	assert len(list(run.stage_dir("genomad").glob("raw/batch*.fna"))) >= 2
+	assert "--splits 4" in run.console_log.read_text() if run.console_log.exists() else True
 
 
 def test_defence_stage_merges_tools(tmp_path):

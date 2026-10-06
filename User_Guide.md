@@ -274,7 +274,10 @@ Subfamilies are drawn as lighter shades of the family colour and listed in
 
 ```
 -ss             secretion systems (Sismis)
--gn             proviruses and plasmids (geNomad); -gdb DIR for another database
+-gn             proviruses and plasmids (geNomad); -gdb DIR for another database.
+                geNomad is memory-hungry: windows are handed to it in batches of
+                batch_mb megabases (tools table, default 50); if it is killed with
+                signal 9, lower batch_mb or raise splits on its row
 -df             anti-phage defence systems (DefenseFinder)
 -pl             anti-phage defence systems (PadLoc); with -df, agreed calls are drawn once
                 Both are called on the genes inside the -sr span when it is given,

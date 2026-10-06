@@ -29,6 +29,7 @@ class Contig:
 	first: int
 	last: int
 	reach: list[int] = field(default_factory=list)
+	circular: bool = False
 
 
 class GeneTable:
@@ -36,6 +37,7 @@ class GeneTable:
 		self.genes: list[Feature] = []
 		self.contigs: dict[str, Contig] = {}
 		self.overruns: list[tuple[str, int, int]] = []
+		self._circular: set[str] = set()
 		self._by_accession: dict[str, int] = {}
 		self._parse(gff)
 		self._index()
@@ -53,13 +55,13 @@ class GeneTable:
 		for i, g in enumerate(self.genes):
 			contig = self.contigs.get(g.contig)
 			if contig is None:
-				contig = Contig(g.contig, lengths.get(g.contig, 0), i, i + 1)
+				contig = Contig(g.contig, lengths.get(g.contig, 0), i, i + 1, circular=g.contig in self._circular)
 				self.contigs[g.contig] = contig
 			contig.last = i + 1
 			contig.reach.append(max(contig.reach[-1] if contig.reach else 0, g.end))
 			self._by_accession.setdefault(g.accession, i)
 		for contig in self.contigs.values():
-			if contig.length and contig.reach[-1] > contig.length:
+			if contig.length and contig.reach[-1] > contig.length and not contig.circular:
 				self.overruns.append((contig.name, contig.length, contig.reach[-1]))
 			contig.length = max(contig.length, contig.reach[-1])
 
@@ -76,6 +78,8 @@ class GeneTable:
 				feature, attrs = col[2], _attrs(col[8])
 				if feature == "region":
 					self._lengths.setdefault(col[0], _int(col[4]))
+					if attrs.get("Is_circular", "").lower() == "true":
+						self._circular.add(col[0])
 				elif feature.endswith("gene"):
 					self.genes.append(Feature(col[0], int(col[3]), int(col[4]), col[6], None, "",
 						attrs.get("gene_biotype", ""), attrs.get("locus_tag", ""), False))

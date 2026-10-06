@@ -388,7 +388,7 @@ class Genomad(CondaTool):
 	packages = ["genomad"]
 	binary = "genomad"
 	row = "genomad"
-	command = "end-to-end --cleanup --threads {threads} {in} {out} {db}"
+	command = "end-to-end --cleanup --threads {threads} --splits {splits} {in} {out} {db}"
 
 	def after(self, binary: Path) -> None:
 		db = home.DB / "genomad"

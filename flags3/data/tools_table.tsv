@@ -2,7 +2,7 @@
 blastp	blastp -query {in} -db {db} -outfmt "6 sacc evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}				
 deeptmhmm	dtm2 {fasta} {out} --simplify-io				
 defensefinder	defense-finder run --db-type gembase -o {out} {faa}				
-genomad	genomad end-to-end --cleanup --threads {threads} {in} {out} {db}				
+genomad	genomad end-to-end --cleanup --threads {threads} --splits {splits} {in} {out} {db}				splits=0;batch_mb=50
 iqtree	iqtree -s {in} -m {model} --prefix {prefix} -T {threads} --quiet				
 mafft	mafft --auto --anysymbol --quiet --thread {threads} {in}				
 mmseqs	mmseqs easy-linclust {in} {out} {tmp} --min-seq-id {id} -c {cov} --cov-mode 0 --threads {threads} -v 1				

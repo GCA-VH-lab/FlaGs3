@@ -80,7 +80,8 @@ class WindowScan(Stage):
 		if not usable:
 			raise ScanError("no genome FASTA for any assembly; run flags3 fetch <run> --{} first".format(self.name))
 		cuts = windows.merge([w for w in rows if w.assembly in usable])
-		batches = windows.Batches(out / "raw")
+		batch_mb = tool.options.get("batch_mb")
+		batches = windows.Batches(out / "raw", int(float(batch_mb) * 1_000_000) if batch_mb else windows.MAX_BATCH_BASES)
 		paths = batches.write(usable, cuts)
 		note("{}: {} windows in {} batch files".format(self.tool_name, len(batches.cuts), len(paths)))
 		by_record = batches.by_record()
@@ -117,7 +118,8 @@ class WindowScan(Stage):
 			for a in sorted(set(usable) | set(missing))))
 		note("{}: {} hits on {} assemblies".format(self.tool_name, len(placed), len(counts)))
 		if failed and len(failed) == len(usable):
-			raise ScanError("{} failed on every batch".format(self.tool_name))
+			raise ScanError("{} failed on every batch ({}); see console.log for the tool's own message".format(
+				self.tool_name, next(iter(failed.values()))[:200]))
 
 	def scan_batch(self, tool: Tool, fasta: Path, out_dir: Path, config) -> list[Hit]:
 		raise NotImplementedError
@@ -130,7 +132,10 @@ class WindowScan(Stage):
 			raise ScanError("could not run {}: {}".format(argv[0], error))
 		record_command(argv, done.returncode, done.stdout, done.stderr)
 		if done.returncode != 0:
-			raise ScanError("{} exited {}: {}".format(argv[0], done.returncode, brief(done.stderr or done.stdout)))
+			hint = ""
+			if "SIGKILL" in (done.stderr or "") or "Killed" in (done.stderr or "") or done.returncode == -9:
+				hint = " [a step was killed (signal 9) — almost always out of memory; lower batch_mb or raise splits on the tool's row]"
+			raise ScanError("{} exited {}: {}{}".format(argv[0], done.returncode, brief(done.stderr or done.stdout), hint))
 		return done
 
 	def write_report(self, path: Path, placed: list[Placed]) -> None:

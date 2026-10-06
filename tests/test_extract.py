@@ -144,3 +144,23 @@ def test_gff_attributes_are_url_decoded_and_species_falls_back(tmp_path):
 	genes = {g.accession: g for g in _genes(run)}
 	assert genes["WP_005"].product == "protein five, NAD(P)-binding; starvation"
 	assert RowInfo.read(run.stage_file("extract", RowInfo.FILE))[0].species == "Escherichia coli K-12"
+
+
+def test_circular_contig_overrun_is_silent_and_not_an_edge(tmp_path):
+	genomes = tmp_path / "genomes"
+	write_genome(genomes)
+	gff = genomes / "GCF_TEST_genomic.gff"
+	text = gff.read_text().replace("##sequence-region B 1 5000", "##sequence-region B 1 1100")
+	text = text.replace("##gff-version 3\n", "##gff-version 3\nB\tRefSeq\tregion\t1\t1100\t.\t+\t.\tID=B:1..1100;Is_circular=true\n", 1)
+	gff.write_text(text)
+	from flags3.genome import GeneTable
+	table = GeneTable(gff)
+	assert table.contigs["B"].circular and table.overruns == []
+	run = RunDir(tmp_path / "out").create("test", "")
+	(run.input_dir / "list.txt").write_text("WP_009\n")
+	cfg = run.config()
+	cfg.update({"inputs": "list.txt", "genomes": str(genomes), "offline": True, "gene": 2})
+	cfg.save()
+	runner = Runner(run, cfg, report=lambda m: None)
+	assert runner.execute(Fetch()) and runner.execute(Extract())
+	assert all(not g.contig_edge for g in _genes(run))

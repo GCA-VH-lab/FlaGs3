@@ -65,7 +65,8 @@ class Genomad(WindowScan):
 
 	def scan_batch(self, tool: Tool, fasta: Path, out_dir: Path, config) -> list[Hit]:
 		db = database(tool, config.text("genomad_db"))
-		self.execute(tool, tool.argv(**{"in": fasta, "out": out_dir, "db": db, "threads": config.workers()}))
+		self.execute(tool, tool.argv(**{"in": fasta, "out": out_dir, "db": db, "threads": config.workers(),
+			"splits": tool.options.get("splits", "0")}))
 		hits = []
 		for path in sorted(out_dir.rglob("*_summary.tsv")):
 			if path.name.endswith("_virus_summary.tsv"):

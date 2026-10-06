@@ -165,8 +165,8 @@ class Extract(Stage):
 			source = GenomeSource(files)
 			for contig, declared, reached in source.table.overruns:
 				print("Warning: {} {}: the annotation declares the contig {} bp long but a gene ends at {}; "
-					"using {}. A truncated record or an inconsistent GFF — check the genes at that end.".format(
-						assembly, contig, declared, reached, reached))
+					"using {}. The contig is not marked circular, so this is a truncated record or an inconsistent GFF — "
+					"check the genes at that end.".format(assembly, contig, declared, reached, reached))
 			for target in grouped[assembly]:
 				index = source.table.find(target.acceptable)
 				if index is None:
@@ -186,9 +186,10 @@ class Extract(Stage):
 		row = row_id(target.query, target.assembly)
 		q = hood.query
 		contig = hood.contig
+		edge = lambda j: not contig.circular and (j == contig.first or j == contig.last - 1)
 		for j, g in hood.genes():
 			outputs.genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start, g.end,
-				g.strand, g.product or MISSING, g.is_rna, hood.offset(j), j == contig.first or j == contig.last - 1))
+				g.strand, g.product or MISSING, g.is_rna, hood.offset(j), edge(j)))
 			if g.is_rna:
 				seq = source.rna_sequence(g)
 				if seq:
@@ -205,7 +206,7 @@ class Extract(Stage):
 			if seq:
 				outputs.scan_proteins.setdefault(g.accession, seq)
 				outputs.scan_genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start,
-					g.end, g.strand, g.product or MISSING, False, hood.offset(j), j == contig.first or j == contig.last - 1))
+					g.end, g.strand, g.product or MISSING, False, hood.offset(j), edge(j)))
 		lo, hi = hood.span()
 		scan_lo, scan_hi = hood.scan_span()
 		cut_lo, cut_hi = hood.scan_span(settings.margin)

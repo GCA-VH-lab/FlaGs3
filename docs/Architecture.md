@@ -544,10 +544,12 @@ every domain and band code used across the run's figures),
 `protein_clusters_legend.txt` and `rna_clusters_legend.txt` (the `_outdesc`
 layout: label(occurrences), accession, product per cluster, members ordered
 by subcluster letter, then bridges, then `?`, and by occurrence within a
-letter), and `systems.tsv` (one line
+letter), `systems.tsv` (one line
 per drawn band: stage, code, system name, assembly, contig, span, the rows
 it overlaps, the genes inside it as `accession(label)`, and their
-products). Codes there are assigned over the whole run with the first
+products), and `systems_summary.txt` (per band stage: how many of the
+run's neighbourhoods carry a system, then each type with the number of
+neighbourhoods and of calls). Codes there are assigned over the whole run with the first
 figure's numbering, so they match what the figures show.
 
 Files in `figures/` and `report/` are named with the run's start time

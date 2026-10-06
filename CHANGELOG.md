@@ -55,6 +55,7 @@ A rewrite. Same analysis, same figures, different construction.
   `rna_clusters_legend.txt`), members ordered by subcluster.
 - In a query cluster, `Q` marks proteins that were in the input list and
   `q` the other members.
+- `figures/systems_summary.txt`: neighbourhood counts per system type.
 
 ### Migration from 2.3.0
 

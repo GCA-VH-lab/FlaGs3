@@ -414,9 +414,10 @@ figure has a legend panel per layer; a domain panel can be long.
 Three or four files sit beside the figures: `legend.tsv` (every domain and
 band code with its name), `protein_clusters_legend.txt` and, with `-cr`,
 `rna_clusters_legend.txt` (each cluster's members in subcluster order with
-their labels and products, the old `_outdesc` layout), and `systems.tsv`
+their labels and products, the old `_outdesc` layout), `systems.tsv`
 (each drawn defence, secretion or mobile-element system with the genes
-inside it and the clusters they belong to).
+inside it and the clusters they belong to), and `systems_summary.txt`
+(how many neighbourhoods carry each kind of system, by type).
 
 Every file in `figures/` and `report/` carries the run's start time in its
 name (`neighbors_261006_093847.svg`, `neighbourhoods_261006_093847.tsv`),

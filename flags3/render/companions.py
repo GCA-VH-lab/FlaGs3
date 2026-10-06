@@ -10,6 +10,7 @@ LEGEND = "legend.tsv"
 PROTEIN_LEGEND = "protein_clusters_legend.txt"
 RNA_LEGEND = "rna_clusters_legend.txt"
 SYSTEMS = "systems.tsv"
+SYSTEMS_SUMMARY = "systems_summary.txt"
 LETTERS = re.compile(r"^[QqR]?\d+")
 
 
@@ -35,9 +36,49 @@ class Companions:
 			written.append(self.clusters_legend(out / stamped(PROTEIN_LEGEND), "cluster"))
 		if "cluster_rna" in self.data.present:
 			written.append(self.clusters_legend(out / stamped(RNA_LEGEND), "cluster_rna"))
-		if any(s in self.data.annotations for s in BAND_ORDER):
+		if any(s in self.data.present for s in BAND_ORDER):
 			written.append(self.systems(out / stamped(SYSTEMS)))
+			written.append(self.systems_summary(out / stamped(SYSTEMS_SUMMARY)))
 		return written
+
+	def systems_summary(self, path: Path) -> Path:
+		rows_total = len(self.data.genes)
+		by_contig: dict[tuple, set] = {}
+		for row_id, genes in self.data.genes.items():
+			for g in genes:
+				by_contig.setdefault((g.assembly, g.contig), set()).add(row_id)
+		lines = ["{} neighbourhoods in the run".format(rows_total), ""]
+		for stage in BAND_ORDER:
+			if stage not in self.data.present:
+				continue
+			title = STAGE_TITLES[stage].lower()
+			annotations = self.data.annotations.get(stage, [])
+			rows_hit: set = set()
+			per_type: dict[str, set] = {}
+			calls: dict[str, int] = {}
+			for a in annotations:
+				assembly, _, contig = a.subject.rpartition("|")
+				touched = {r for r in by_contig.get((assembly, contig), set())
+					if any(g.end >= a.start and g.start <= a.end for g in self.data.genes[r])}
+				if not touched:
+					continue
+				rows_hit |= touched
+				per_type.setdefault(a.category, set()).update(touched)
+				calls[a.category] = calls.get(a.category, 0) + 1
+			if not rows_hit:
+				lines.append("no {} in any neighbourhood".format(title))
+				lines.append("")
+				continue
+			n_calls, n_types = sum(calls.values()), len(calls)
+			lines.append("{} in {} of {} neighbourhoods ({} call{}, {} type{}):".format(
+				title, len(rows_hit), rows_total, n_calls, "" if n_calls == 1 else "s", n_types, "" if n_types == 1 else "s"))
+			for category, touched in sorted(per_type.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+				code = self.codes.get(stage, {}).get(category, "")
+				lines.append("  {:>5} {:<40} {:>4} neighbourhood{} {:>4} call{}".format(
+					code, category[:40], len(touched), "s" if len(touched) != 1 else " ", calls[category], "s" if calls[category] != 1 else ""))
+			lines.append("")
+		path.write_text("\n".join(lines).rstrip() + "\n")
+		return path
 
 	def legend(self, path: Path) -> Path:
 		with open(path, "w", newline="", encoding="utf-8") as handle:

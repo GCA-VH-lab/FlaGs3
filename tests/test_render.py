@@ -176,3 +176,6 @@ def test_companion_files(tmp_path):
 	assert figure_label("5") == "G5" and figure_label("12a") == "G12a" and figure_label("Q1ab") == "Q1ab" and figure_label("-") == "-"
 	assert "WP_004|GCF_TEST" in line[7] and "query protein" in line[9]
 	assert run.stage_file("figures", run.stamped("protein_clusters_legend.txt")).exists()
+	summary = run.stage_file("figures", run.stamped("systems_summary.txt")).read_text()
+	assert "3 neighbourhoods in the run" in summary
+	assert "defence systems in 1 of 3 neighbourhoods (1 call, 1 type):" in summary and "D1 RM" in summary

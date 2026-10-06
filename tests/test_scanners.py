@@ -171,3 +171,13 @@ def test_features_without_biolib_fails_softly(tmp_path, monkeypatch):
 	monkeypatch.setattr(builtins, "__import__", no_biolib)
 	assert runner.execute(Features()) is False
 	assert "pybiolib" in run.status("features").get("error")
+
+
+def test_defence_uses_scan_genes_when_scan_range_is_set(tmp_path):
+	run, runner = _run(tmp_path, ["WP_004"], gene=1, scan_range=3000, scan_margin=0, defensefinder=True)
+	assert runner.execute(Defence())
+	gff = run.stage_file("defence", "raw/neighbourhoods.gff").read_text()
+	assert gff.count("\tCDS\t") == 6
+	run2, runner2 = _run(tmp_path / "b", ["WP_004"], gene=1, defensefinder=True)
+	assert runner2.execute(Defence())
+	assert run2.stage_file("defence", "raw/neighbourhoods.gff").read_text().count("\tCDS\t") == 2

@@ -277,6 +277,9 @@ Subfamilies are drawn as lighter shades of the family colour and listed in
 -gn             proviruses and plasmids (geNomad); -gdb DIR for another database
 -df             anti-phage defence systems (DefenseFinder)
 -pl             anti-phage defence systems (PadLoc); with -df, agreed calls are drawn once
+                Both are called on the genes inside the -sr span when it is given,
+                so a system reaching past the drawn neighbourhood is still found;
+                without -sr, on the neighbourhood genes only
 ```
 
 ### Figures and output

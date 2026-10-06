@@ -427,8 +427,12 @@ colours); `label` is what geNomad actually called, the last named viral
 rank or `conjugative plasmid (AMR)`. The database path is the `db=` option
 of the genomad row, which `flags3 install genomad` writes, or `-gdb`.
 
-`defence` (`-df`, `-pl`) runs on genes rather than windows. Each row's
-protein-coding neighbourhood becomes a synthetic replicon `r<n>` in one GFF
+`defence` (`-df`, `-pl`) runs on genes rather than windows. With `-sr`
+set it takes the protein-coding genes of the scan span (`scan_genes.tsv`,
+`scan_proteins.faa`), so a system that straddles the edge of the drawn
+neighbourhood is called whole, as it is for the sequence scanners; without
+`-sr` it uses the neighbourhood genes, as 2.3.0 did. Each row's set
+becomes a synthetic replicon `r<n>` in one GFF
 and one FASTA under `defence/raw/`, DefenseFinder and PadLoc run on those,
 and their calls are mapped back through the `r<n>_<order>` tags to real
 accessions and coordinates. A system both tools call on the same genes with

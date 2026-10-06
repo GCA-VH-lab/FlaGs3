@@ -9,6 +9,7 @@ from flags3 import fasta, windows
 from flags3.log import debug, note, record_command
 from flags3.schema import MISSING, Annotation, Gene, Row, Window
 from flags3.stage import Stage
+from flags3.stages.extract import PROTEINS, SCAN_GENES, SCAN_PROTEINS
 from flags3.tools import Tool, Tools, brief
 
 TOOLS = ("defensefinder", "padloc")
@@ -97,9 +98,11 @@ class Defence(Stage):
 
 	def run(self, run, config, out: Path) -> None:
 		tools = Tools.load(config.path("tools"))
-		genes = Gene.read(run.stage_file("extract", Gene.FILE))
 		rows = Window.read(run.stage_file("extract", Window.FILE))
-		sequences = {n: s for n, _, s in fasta.read(run.stage_file("extract", "proteins.faa"))}
+		scan = config.integer("scan_range") and run.stage_file("extract", SCAN_GENES).is_file()
+		genes = Gene.read(run.stage_file("extract", SCAN_GENES if scan else Gene.FILE))
+		sequences = {n: s for n, _, s in fasta.read(run.stage_file("extract", SCAN_PROTEINS if scan else PROTEINS))}
+		note("defence: calling on the {} ({} genes)".format("scan spans (-sr)" if scan else "neighbourhoods", len(genes)))
 		replicons = Replicons(genes, sequences)
 		raw = out / "raw"
 		raw.mkdir(parents=True, exist_ok=True)

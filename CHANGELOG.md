@@ -46,6 +46,9 @@ A rewrite. Same analysis, same figures, different construction.
 - Older run directories stay readable: new columns with a default
   (`contig_edge`, `via`) are filled when absent.
 
+- DefenseFinder and PadLoc are called on the `-sr` span's genes when `-sr`
+  is given, not only on the drawn neighbourhood.
+
 ### Migration from 2.3.0
 
 | 2.3.0 | 3.0 |

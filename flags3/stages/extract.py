@@ -163,6 +163,10 @@ class Extract(Stage):
 					outputs.unmatched.append(Unmatched(target.query, assembly, "genome files missing"))
 				continue
 			source = GenomeSource(files)
+			for contig, declared, reached in source.table.overruns:
+				print("Warning: {} {}: the annotation declares the contig {} bp long but a gene ends at {}; "
+					"using {}. A truncated record or an inconsistent GFF — check the genes at that end.".format(
+						assembly, contig, declared, reached, reached))
 			for target in grouped[assembly]:
 				index = source.table.find(target.acceptable)
 				if index is None:
@@ -208,5 +212,5 @@ class Extract(Stage):
 		outputs.windows.append(Window(row, target.assembly, q.contig, hood.contig.length,
 			lo, hi, scan_lo, scan_hi, cut_lo, cut_hi))
 		outputs.rows.append(RowInfo(row, target.query, target.assembly, q.accession, q.contig,
-			q.strand, source.proteins.organisms.get(q.accession, MISSING)))
+			q.strand, source.proteins.organism_of(q.accession) or MISSING))
 		outputs.ranges.append(hood.range_report(row))

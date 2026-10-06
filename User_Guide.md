@@ -151,7 +151,14 @@ MGYG000454827_00001	MGYG000454827
 
 - A bare protein accession is resolved through NCBI's IPG to the assembly
   that carries it (RefSeq first). `-m 3` takes up to three assemblies,
-  `-nc` keeps RefSeq proteins in RefSeq assemblies only.
+  `-nc` keeps RefSeq proteins in RefSeq assemblies only. An IPG — Identical
+  Protein Group — is NCBI's record of accessions with 100% identical
+  sequence, so when `fetch/queries.tsv` lists another accession for your
+  query in that assembly (`WP_014343435.1,YP_005229063.1`), it is the same
+  protein under the assembly's own name; FlaGs3 does no alignment of its
+  own for this. The `via` column says how each query was placed: `ipg`,
+  `paired` (you named the assembly), `local` (found in the genome
+  directory), `blast`.
 - A tab and an assembly accession pin the genome. Add `-rm` if a paired
   query might be annotated under a different accession in that assembly;
   IPG is then asked, and the query is matched under whatever name it has

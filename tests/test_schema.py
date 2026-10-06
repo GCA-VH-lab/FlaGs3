@@ -67,3 +67,15 @@ def test_identifiers():
 	assert split_bp_subject(bp_subject("GCF_1", "NZ_1")) == ("GCF_1", "NZ_1")
 	with pytest.raises(SchemaError):
 		split_row_id("WP_1")
+
+
+def test_optional_columns_are_filled(tmp_path):
+	from flags3.schema import Gene, QueryTarget
+	path = tmp_path / "genes.tsv"
+	path.write_text("row_id\tassembly\tcontig\taccession\tstart\tend\tstrand\tproduct\tis_rna\toffset\nr\ta\tc\tx\t1\t9\t+\tp\tfalse\t0\n")
+	assert Gene.read(path)[0].contig_edge is False
+	q = tmp_path / "queries.tsv"
+	q.write_text("query\tassembly\taccessions\tstatus\nWP_1\tGCF_1\t-\tok\n")
+	assert QueryTarget.read(q)[0].via == "-"
+	with pytest.raises(SchemaError):
+		Annotation.read(path)

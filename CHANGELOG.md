@@ -32,6 +32,20 @@ A rewrite. Same analysis, same figures, different construction.
   genes with codes at the row's right, palettes `bright`, `pastel`,
   `classic`, `colourblind`, `monochrome`, `colours.tsv` for overrides.
 
+### Since 3.0.0rc1
+
+- GFF attribute values are URL-decoded (`%2C` → `,`), and a row's species
+  falls back to the organism named by the rest of that assembly's proteins.
+- `fetch/queries.tsv` has a `via` column (`ipg`, `paired`, `local`, `blast`);
+  IPG aliases are identical sequences by NCBI's definition and are not
+  aligned locally.
+- `run_summary.txt` counts the exported protein sequences and says why that
+  differs from the gene count (RNA genes, pseudogenes, repeated proteins).
+- A gene running past its contig's declared length widens the contig with a
+  warning instead of stopping the run.
+- Older run directories stay readable: new columns with a default
+  (`contig_edge`, `via`) are filled when absent.
+
 ### Migration from 2.3.0
 
 | 2.3.0 | 3.0 |

@@ -39,6 +39,7 @@ def split_row_id(row: str) -> tuple[str, str]:
 
 class Row:
 	FILE: ClassVar[str] = ""
+	OPTIONAL: ClassVar[tuple[str, ...]] = ()
 
 	@classmethod
 	def columns(cls) -> tuple[str, ...]:
@@ -49,6 +50,8 @@ class Row:
 		kwargs = {}
 		for f in fields(cls):
 			raw = values.get(f.name, MISSING)
+			if raw == MISSING and f.name in cls.OPTIONAL and f.type is bool:
+				raw = "false"
 			kwargs[f.name] = _parse(raw, f.type)
 		return cls(**kwargs)
 
@@ -64,9 +67,9 @@ class Row:
 		with open(path, newline="", encoding="utf-8") as handle:
 			reader = csv.DictReader(handle, delimiter="\t")
 			missing = set(cls.columns()) - set(reader.fieldnames or ())
-			if missing:
+			if missing - set(cls.OPTIONAL):
 				raise SchemaError("{} lacks columns: {}".format(
-					path, ", ".join(sorted(missing))))
+					path, ", ".join(sorted(missing - set(cls.OPTIONAL)))))
 			for line in reader:
 				yield cls.from_strings(line)
 
@@ -111,6 +114,7 @@ def _format(value) -> str:
 @dataclass(frozen=True)
 class Gene(Row):
 	FILE: ClassVar[str] = "genes.tsv"
+	OPTIONAL: ClassVar[tuple[str, ...]] = ("contig_edge",)
 	row_id: str
 	assembly: str
 	contig: str
@@ -177,10 +181,12 @@ class GenomeFiles(Row):
 @dataclass(frozen=True)
 class QueryTarget(Row):
 	FILE: ClassVar[str] = "queries.tsv"
+	OPTIONAL: ClassVar[tuple[str, ...]] = ("via",)
 	query: str
 	assembly: str
 	accessions: str
 	status: str
+	via: str
 
 	@property
 	def acceptable(self) -> set[str]:

@@ -173,6 +173,12 @@ class Report(Stage):
 		lines.append("")
 		lines.append("{} queries, {} rows, {} genes, {} unmatched".format(
 			len(t.input_queries()), len(t.rows), len(t.genes), len(t.unmatched)))
+		rna = sum(1 for g in t.genes if g.is_rna)
+		pseudo = sum(1 for g in t.genes if g.accession == "pseudogene*")
+		flanking = sum(1 for a in t.proteins if a not in t.query_accessions)
+		lines.append("{} distinct protein sequences exported ({} query, {} flanking); of the {} genes, {} are RNA, {} pseudogenes, "
+			"and {} are repeats of a protein already counted".format(len(t.proteins), len(t.proteins) - flanking, flanking,
+				len(t.genes), rna, pseudo, len(t.genes) - rna - pseudo - len(t.proteins)))
 		lines.append("{} families, {} labelled".format(len(t.families), len({f.label for f in t.families if f.label != MISSING})))
 		lines.append("")
 		lines.append("stage        status    seconds")

@@ -143,7 +143,9 @@ carry the explanations.
 
 `fetch` turns the input lists into two tables: `genomes.tsv` (assembly,
 source, and the four file paths) and `queries.tsv` (query, assembly, the
-accessions IPG says the query goes by in that assembly, and a status), plus
+accessions IPG says the query goes by in that assembly — identical
+sequence by IPG's definition, never aligned locally — a status, and `via`:
+how the query was placed), plus
 `failures.tsv` for everything that went wrong on the way (unreachable IPG
 chunks, download errors, remaps, cross-database exclusions). Resolution and
 download are one stage because both answer "where are this query's genome

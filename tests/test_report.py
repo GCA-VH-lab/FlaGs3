@@ -36,6 +36,7 @@ def test_report_tables(tmp_path):
 	summary = run.stage_file("report", "run_summary.txt").read_text()
 	assert "3 queries, 2 rows" in summary and "cluster      ok" in summary and "flags3 run -i list.txt" in summary
 	assert "elapsed: " in summary and "stages total" in summary
+	assert "distinct protein sequences exported" in summary
 	families = run.stage_file("report", "families.tsv").read_text().splitlines()
 	assert families[0].startswith("family\tlabel\tsize")
 

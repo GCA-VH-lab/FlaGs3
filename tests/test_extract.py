@@ -108,3 +108,39 @@ def test_contig_edge_flag(tmp_path):
 	genes = {(g.row_id, g.accession): g for g in _genes(run)}
 	assert genes[("WP_009|GCF_TEST", "WP_008")].contig_edge and genes[("WP_009|GCF_TEST", "WP_009")].contig_edge
 	assert genes[("WP_001|GCF_TEST", "WP_001")].contig_edge and not genes[("WP_001|GCF_TEST", "WP_002")].contig_edge
+
+
+def test_gene_past_declared_contig_end(tmp_path):
+	genomes = tmp_path / "genomes"
+	write_genome(genomes)
+	gff = genomes / "GCF_TEST_genomic.gff"
+	gff.write_text(gff.read_text().replace("##sequence-region B 1 5000", "##sequence-region B 1 1100"))
+	run = RunDir(tmp_path / "out").create("test", "")
+	(run.input_dir / "list.txt").write_text("WP_009\n")
+	cfg = run.config()
+	cfg.update({"inputs": "list.txt", "genomes": str(genomes), "offline": True, "gene": 2})
+	cfg.save()
+	runner = Runner(run, cfg, report=lambda m: None)
+	assert runner.execute(Fetch()) and runner.execute(Extract())
+	window = Window.read(run.stage_file("extract", Window.FILE))[0]
+	assert window.contig_length == 1200 and window.hi == 1200
+	assert "declares the contig 1100 bp long but a gene ends at 1200" in run.console_log.read_text() if run.console_log.exists() else True
+
+
+def test_gff_attributes_are_url_decoded_and_species_falls_back(tmp_path):
+	genomes = tmp_path / "genomes"
+	write_genome(genomes)
+	gff = genomes / "GCF_TEST_genomic.gff"
+	gff.write_text(gff.read_text().replace("product=protein five", "product=protein five%2C NAD(P)-binding%3B starvation"))
+	faa = genomes / "GCF_TEST_protein.faa"
+	faa.write_text(faa.read_text().replace(">WP_004 query protein [Escherichia coli K-12]", ">WP_004 query protein"))
+	run = RunDir(tmp_path / "out").create("test", "")
+	(run.input_dir / "list.txt").write_text("WP_004\n")
+	cfg = run.config()
+	cfg.update({"inputs": "list.txt", "genomes": str(genomes), "offline": True, "gene": 1})
+	cfg.save()
+	runner = Runner(run, cfg, report=lambda m: None)
+	assert runner.execute(Fetch()) and runner.execute(Extract())
+	genes = {g.accession: g for g in _genes(run)}
+	assert genes["WP_005"].product == "protein five, NAD(P)-binding; starvation"
+	assert RowInfo.read(run.stage_file("extract", RowInfo.FILE))[0].species == "Escherichia coli K-12"

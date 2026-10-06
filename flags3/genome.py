@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from urllib.parse import unquote
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,7 @@ class GeneTable:
 	def __init__(self, gff: Path):
 		self.genes: list[Feature] = []
 		self.contigs: dict[str, Contig] = {}
+		self.overruns: list[tuple[str, int, int]] = []
 		self._by_accession: dict[str, int] = {}
 		self._parse(gff)
 		self._index()
@@ -57,8 +59,9 @@ class GeneTable:
 			contig.reach.append(max(contig.reach[-1] if contig.reach else 0, g.end))
 			self._by_accession.setdefault(g.accession, i)
 		for contig in self.contigs.values():
-			if not contig.length:
-				contig.length = contig.reach[-1]
+			if contig.length and contig.reach[-1] > contig.length:
+				self.overruns.append((contig.name, contig.length, contig.reach[-1]))
+			contig.length = max(contig.length, contig.reach[-1])
 
 	def _parse(self, gff: Path):
 		self._lengths = {}
@@ -129,14 +132,20 @@ class ProteinFasta:
 	def __init__(self, path: Path):
 		self.sequences: dict[str, str] = {}
 		self.organisms: dict[str, str] = {}
+		counts: dict[str, int] = {}
 		for name, description, seq in fasta.read(path):
 			self.sequences[name] = seq
 			match = re.search(r"\[([^\]]+)\]\s*$", description)
 			if match:
 				self.organisms[name] = match.group(1)
+				counts[match.group(1)] = counts.get(match.group(1), 0) + 1
+		self.organism = max(counts, key=counts.get) if counts else None
 
 	def get(self, accession: str) -> Optional[str]:
 		return self.sequences.get(accession)
+
+	def organism_of(self, accession: str) -> Optional[str]:
+		return self.organisms.get(accession) or self.organism
 
 
 class RnaFasta:
@@ -171,7 +180,7 @@ def _attrs(text: str) -> dict[str, str]:
 	for item in text.split(";"):
 		key, sep, value = item.partition("=")
 		if sep and key not in out:
-			out[key] = value
+			out[key] = unquote(value)
 	return out
 
 

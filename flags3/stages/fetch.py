@@ -108,7 +108,7 @@ class Fetch(Stage):
 		genomes = self._collect(targets, slots, config, cache, offline, failures)
 		for i, t in enumerate(targets):
 			if t.status == "ok" and not genomes.get(t.assembly, GenomeFiles(t.assembly, "", MISSING, MISSING, MISSING, MISSING)).usable:
-				targets[i] = QueryTarget(t.query, t.assembly, t.accessions, "unresolved: genome files unavailable")
+				targets[i] = QueryTarget(t.query, t.assembly, t.accessions, "unresolved: genome files unavailable", t.via)
 		GenomeFiles.write(out / GenomeFiles.FILE, (genomes[a] for a in sorted(genomes)))
 		QueryTarget.write(out / QueryTarget.FILE, targets)
 		Failure.write(out / Failure.FILE, failures)
@@ -131,7 +131,8 @@ class Fetch(Stage):
 			for protein, assembly in inputs.entries:
 				base = cache.find(assembly) if assembly else cache.by_protein(protein)
 				reason = "unresolved: not in the genome directory" if assembly else "unresolved: not in any genome in the directory"
-				targets.append(QueryTarget(protein, base or assembly or MISSING, MISSING, "ok" if base else reason))
+				targets.append(QueryTarget(protein, base or assembly or MISSING, MISSING, "ok" if base else reason,
+					"paired" if assembly else "local"))
 			return targets
 		local_first = config.flag("local_first")
 		found_locally: dict[str, str] = {}
@@ -155,15 +156,15 @@ class Fetch(Stage):
 				targets.append(self._paired(protein, assembly, result, remap, failures))
 				continue
 			if protein in found_locally:
-				targets.append(QueryTarget(protein, found_locally[protein], MISSING, "ok"))
+				targets.append(QueryTarget(protein, found_locally[protein], MISSING, "ok", "local"))
 				continue
 			chosen = result.assemblies.get(protein) or []
 			if not chosen:
 				reason = result.errors.get(protein, "unresolved: IPG lists no assembly")
-				targets.append(QueryTarget(protein, MISSING, MISSING, reason if reason.startswith("unresolved") else "unresolved: " + reason))
+				targets.append(QueryTarget(protein, MISSING, MISSING, reason if reason.startswith("unresolved") else "unresolved: " + reason, "ipg"))
 				continue
 			for choice in chosen:
-				targets.append(QueryTarget(protein, choice, ",".join(sorted(result.aliases(protein, choice))) or MISSING, "ok"))
+				targets.append(QueryTarget(protein, choice, ",".join(sorted(result.aliases(protein, choice))) or MISSING, "ok", "ipg"))
 		return targets
 
 	@staticmethod
@@ -173,44 +174,8 @@ class Fetch(Stage):
 			choice = result.assemblies.get(protein) or []
 			if choice:
 				failures.append(Failure(protein, "remapped from {} to {} by IPG".format(assembly, choice[0])))
-				return QueryTarget(protein, choice[0], ",".join(sorted(result.aliases(protein, choice[0]))) or MISSING, "ok")
-		return QueryTarget(protein, assembly, ",".join(sorted(aliases)) or MISSING, "ok")
-		local_first = config.flag("local_first")
-		found_locally: dict[str, str] = {}
-		if local_first:
-			for protein in inputs.unpaired:
-				base = cache.by_protein(protein)
-				if base:
-					found_locally[protein] = base
-			if found_locally:
-				note("{} bare queries found in the genome directory; the rest go to IPG".format(len(found_locally)))
-		mapper = self._mapper(config) if any(p not in found_locally for p in inputs.unpaired) or (config.flag("remap") and inputs.paired) else None
-		remap = config.flag("remap")
-		lookup = [p for p in inputs.unpaired if p not in found_locally] + ([p for p, _ in inputs.paired] if remap else [])
-		result = mapper.map(lookup) if (lookup and mapper) else ncbi.Resolution()
-		for protein, reason in result.errors.items():
-			failures.append(Failure(protein, reason))
-		for protein, dropped in result.dropped.items():
-			failures.append(Failure(protein, "cross-database assemblies excluded: " + ",".join(sorted(dropped))))
-		for protein, assembly in inputs.paired:
-			aliases = result.aliases(protein, assembly)
-			if remap and protein in result.accessions and not aliases:
-				choice = result.assemblies.get(protein) or []
-				if choice:
-					targets.append(QueryTarget(protein, choice[0], ",".join(sorted(result.aliases(protein, choice[0]))) or MISSING,
-						"ok"))
-					failures.append(Failure(protein, "remapped from {} to {} by IPG".format(assembly, choice[0])))
-					continue
-			targets.append(QueryTarget(protein, assembly, ",".join(sorted(aliases)) or MISSING, "ok"))
-		for protein in inputs.unpaired:
-			chosen = result.assemblies.get(protein) or []
-			if not chosen:
-				reason = result.errors.get(protein, "unresolved: IPG lists no assembly")
-				targets.append(QueryTarget(protein, MISSING, MISSING, reason if reason.startswith("unresolved") else "unresolved: " + reason))
-				continue
-			for assembly in chosen:
-				targets.append(QueryTarget(protein, assembly, ",".join(sorted(result.aliases(protein, assembly))) or MISSING, "ok"))
-		return targets
+				return QueryTarget(protein, choice[0], ",".join(sorted(result.aliases(protein, choice[0]))) or MISSING, "ok", "ipg")
+		return QueryTarget(protein, assembly, ",".join(sorted(aliases)) or MISSING, "ok", "paired")
 
 	def _collect(self, targets: list[QueryTarget], slots: list[str], config, cache: GenomeCache,
 			offline: bool, failures: list[Failure]) -> dict[str, GenomeFiles]:
@@ -222,7 +187,7 @@ class Fetch(Stage):
 				continue
 			base = cache.find(t.assembly)
 			if base and base != t.assembly:
-				targets[i] = t = QueryTarget(t.query, base, t.accessions, t.status)
+				targets[i] = t = QueryTarget(t.query, base, t.accessions, t.status, t.via)
 			if t.assembly in found:
 				continue
 			have = cache.files(base, slots) if base else {}

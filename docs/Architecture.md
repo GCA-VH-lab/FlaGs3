@@ -425,17 +425,20 @@ coverage.
 ## geNomad, defence systems, TM and signal peptides
 
 `genomad` (`-gn`) is a second `WindowScan`: the same cut windows, a
-different parser. Its row carries `batch_mb` (default 50), the size of
+different parser. The band's `category` — hence its code, colour, legend
+entry and summary line — is what geNomad called: the last named viral rank
+(`Caudoviricetes`) or the plasmid type (`conjugative plasmid (AMR)`), as
+in 2.3.0; the coarse kind (`virus`/`plasmid`) is a column of
+`mobile_elements.tsv`. Its row carries `batch_mb` (default 50), the size of
 each FASTA batch it is called on, and `splits`, passed as geNomad's own
 `--splits` to divide the marker search. Batching caps the query-side
 memory (translated ORFs, per-thread k-mer tables, prefilter result
 buffers); `splits` caps the DB-index side. A 766-window, 89 Mb batch at
 22 threads peaked around 20 GB and was killed by the OOM killer on a
 laptop with a browser open; 50 Mb is chosen from that measurement, and a
-signal-9 death is reported with a pointer to the two options. `category` is `virus` or `plasmid` (what the renderer
-colours); `label` is what geNomad actually called, the last named viral
-rank or `conjugative plasmid (AMR)`. The database path is the `db=` option
-of the genomad row, which `flags3 install genomad` writes, or `-gdb`.
+signal-9 death is reported with a pointer to the two options. The
+database path is the `db=` option of the genomad row, which
+`flags3 install genomad` writes, or `-gdb`.
 
 `defence` (`-df`, `-pl`) runs on genes rather than windows. With `-sr`
 set it takes the protein-coding genes of the scan span (`scan_genes.tsv`,

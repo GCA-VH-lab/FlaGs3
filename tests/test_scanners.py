@@ -106,11 +106,12 @@ def test_genomad_stage(tmp_path):
 	assert runner.execute(Genomad())
 	ann = sorted({a for a in Annotation.read(run.stage_file("genomad", Annotation.FILE))}, key=lambda a: a.category)
 	assert [(a.subject, a.category, a.label, a.start, a.end, a.kind) for a in ann] == [
-		("GCF_TEST|B", "plasmid", "plasmid (AMR)", 1, 2300, "band"),
-		("GCF_TEST|A", "virus", "Caudoviricetes", 1000, 1299, "band")]
-	assert ann[1].score == 0.97
+		("GCF_TEST|A", "Caudoviricetes", "Caudoviricetes", 1000, 1299, "band"),
+		("GCF_TEST|B", "plasmid (AMR)", "plasmid (AMR)", 1, 2300, "band")]
+	assert ann[0].score == 0.97
 	lines = run.stage_file("genomad", "mobile_elements.tsv").read_text().splitlines()
-	assert "genomad_taxonomy" in lines[0]
+	assert "genomad_taxonomy" in lines[0] and "genomad_kind" in lines[0]
+	assert any("\tCaudoviricetes\t" in l and "\tvirus\t" in l for l in lines[1:])
 	assert len(list(run.stage_dir("genomad").glob("raw/batch*.fna"))) >= 2
 	assert "--splits 4" in run.console_log.read_text() if run.console_log.exists() else True
 

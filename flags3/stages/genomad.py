@@ -51,7 +51,9 @@ def parse_summary(path: Path, kind: str):
 				label, score = virus_name(row.get("taxonomy", "")), row.get("virus_score")
 			else:
 				label, score = plasmid_name(row.get("conjugation_genes", ""), row.get("amr_genes", "")), row.get("plasmid_score")
-			yield Hit(record, start, end, kind, float(score or 0.0), label, extra=dict(row))
+			extra = {"kind": kind}
+			extra.update(row)
+			yield Hit(record, start, end, label, float(score or 0.0), label, extra=extra)
 
 
 class Genomad(WindowScan):

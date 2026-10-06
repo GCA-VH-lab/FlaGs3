@@ -57,6 +57,8 @@ A rewrite. Same analysis, same figures, different construction.
   `q` the other members.
 - `figures/systems_summary.txt`: neighbourhood counts per system type.
 
+- geNomad bands are typed by what geNomad called (viral rank, plasmid type),
+  not just virus/plasmid.
 - geNomad runs on 50 Mb batches (`batch_mb` on its row) and takes
   `--splits`; an out-of-memory kill is reported as such.
 

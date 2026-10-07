@@ -719,3 +719,16 @@ from `-n`/`-ce`/`-sc`, or from a hand edit made after the last install.
 `home.py` resolves the FlaGs3 home once at import: `$FLAGS3_HOME` if set,
 otherwise `~/.flags3`. Everything below derives from it, so a server whose
 `$HOME` cannot hold a 100 GB cache sets one variable and installs normally.
+
+
+## Batch
+
+`flags3 batch DIR -o OUT -- options` is deliberately the smallest thing
+that removes the by-hand reload: a sorted loop over the files in `DIR`, one
+`flags3 run -i file -o OUT/stem -nt options` per file as a subprocess, so a
+crash in one run cannot take the loop down. "Done" is `report/status.tsv`
+saying `ok`; done runs are skipped, which is what makes a killed batch
+restartable with the same command; an incomplete run directory is reported
+and redone only with `--retry`, so a batch never silently deletes work. No
+parallelism — one run already uses every core — and no daemon: `nohup` or
+`tmux` is the daemon.

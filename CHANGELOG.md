@@ -57,6 +57,8 @@ A rewrite. Same analysis, same figures, different construction.
   `q` the other members.
 - `figures/systems_summary.txt`: neighbourhood counts per system type.
 
+- `flags3 batch DIR -o OUT -- options`: one run per input list, serial,
+  restartable.
 - `$FLAGS3_HOME` relocates `~/.flags3` (cache, tools, databases, table).
 - `-ts genomad=100000,sismis=contig` (or `span=` on a tool row) gives each
   scanner its own span — bp each side of the query, or the whole contig —

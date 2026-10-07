@@ -85,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
 		run.add_argument(*flags, **kwargs)
 	_common(run)
 
+	batch = sub.add_parser("batch", help="Run flags3 run once per input list in a directory, one after another, skipping lists whose run already finished; restartable")
+	batch.add_argument("lists", metavar="DIR", help="Directory of input lists; each file becomes one run named after it")
+	batch.add_argument("-o", "--out", required=True, metavar="DIR", help="Directory the runs go into (<DIR>/<list name>/)")
+	batch.add_argument("--retry", action="store_true", help="Redo runs that exist but did not finish")
+	batch.add_argument("options", nargs=argparse.REMAINDER, help="Options passed to every flags3 run, after --")
 	install = sub.add_parser("install", help="Install tools and databases under the FlaGs3 home (~/.flags3, or $FLAGS3_HOME); no arguments lists them")
 	install.add_argument("components", nargs="*", metavar="COMPONENT")
 	install.add_argument("path", nargs="?", metavar="PATH", help="Archive, directory or file for a component that takes one (pfam, interpro, defence-hmm, signalp, deeptmhmm)")

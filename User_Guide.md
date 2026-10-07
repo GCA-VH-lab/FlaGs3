@@ -54,7 +54,15 @@ them on PATH and build nothing. The environment must be activated in every
 terminal, as any conda environment.
 
 Whichever route, everything else — external tools, databases, downloaded
-genomes — lives under `~/.flags3/`.
+genomes — lives under `~/.flags3/`. On a machine where the home directory
+is small, point that somewhere roomier before installing anything:
+
+```
+export FLAGS3_HOME=/var/www/flags3     # in ~/.bashrc; the cache can reach 100 GB
+```
+
+Every FlaGs3 path (cache, tool environments, databases, tools table)
+follows it; `-gd` still overrides the cache alone.
 
 ### External tools: `flags3 install`
 
@@ -214,7 +222,12 @@ line as each stage starts and finishes, more with `-vb`.
 -g 4            flanking genes on each side of the query (default 4)
 -r 5000         instead of -g: every gene within 5000 bp of the query
 -sr 20000       span each side of the query handed to the sequence scanners
-                (Sismis, geNomad); without it they see the whole contig
+                (Sismis, geNomad); without it they see the query's whole contig
+-ts genomad=100000,sismis=contig
+                a span per scanner, overriding -sr: bp each side of the query,
+                or contig for the whole contig. A geNomad span of 100 kb with
+                defence on the neighbourhood is the usual pairing; span= on the
+                tool's row makes it permanent
 -sm 10000       extra sequence beyond -sr so a system at the edge is called whole
 ```
 

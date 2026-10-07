@@ -147,3 +147,13 @@ def test_micromamba_prefers_existing(fake_home, monkeypatch, tmp_path):
 	m = install.Micromamba()
 	assert m.ensure() == existing
 	assert "DYLD_LIBRARY_PATH" not in m.env() and m.env()["MAMBA_ROOT_PREFIX"] == str(home.HOME / "mamba")
+
+
+def test_flags3_home_override(tmp_path, monkeypatch):
+	import importlib
+	from flags3 import home
+	monkeypatch.setenv("FLAGS3_HOME", str(tmp_path / "elsewhere"))
+	reloaded = importlib.reload(home)
+	assert reloaded.HOME == tmp_path / "elsewhere" and reloaded.GENOMES == tmp_path / "elsewhere" / "genomes"
+	monkeypatch.delenv("FLAGS3_HOME")
+	importlib.reload(home)

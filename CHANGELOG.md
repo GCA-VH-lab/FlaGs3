@@ -57,6 +57,10 @@ A rewrite. Same analysis, same figures, different construction.
   `q` the other members.
 - `figures/systems_summary.txt`: neighbourhood counts per system type.
 
+- `$FLAGS3_HOME` relocates `~/.flags3` (cache, tools, databases, table).
+- `-ts genomad=100000,sismis=contig` (or `span=` on a tool row) gives each
+  scanner its own span — bp each side of the query, or the whole contig —
+  instead of the shared `-sr`.
 - geNomad bands are typed by what geNomad called (viral rank, plasmid type),
   not just virus/plasmid.
 - geNomad runs on 50 Mb batches (`batch_mb` on its row) and takes

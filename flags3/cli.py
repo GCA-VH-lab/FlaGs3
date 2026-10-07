@@ -29,7 +29,7 @@ RUN_OPTIONS = (
 	(("-m", "--max_assemblies"), dict(type=int, default=1, help="Max assemblies per bare protein query. Default = 1")),
 	(("-nc", "--no_cross_db"), dict(action="store_true", help="RefSeq proteins resolve only to GCF_ assemblies, INSDC only to GCA_")),
 	(("-rm", "--remap"), dict(action="store_true", help="Ask IPG about paired queries too, so an accession renamed in its assembly still matches")),
-	(("-gd", "--genomes"), dict(metavar="DIR", default=str(home.GENOMES), help="Genome cache: looked in first, downloaded into, never emptied. Default = ~/.flags3/genomes")),
+	(("-gd", "--genomes"), dict(metavar="DIR", default=str(home.GENOMES), help="Genome cache: looked in first, downloaded into, never emptied. Default = genomes/ under the FlaGs3 home (~/.flags3 or $FLAGS3_HOME)")),
 	(("--offline",), dict(action="store_true", help="Resolve queries only against the genome directory; no NCBI or MGnify access")),
 	(("-lf", "--local_first"), dict(action="store_true", help="Look bare queries up in the genome directory's protein files before asking IPG, so your own assemblies and NCBI queries can share one list")),
 	(("--no_cache",), dict(action="store_true", help="Neither read nor fill the genome cache: genomes are downloaded into <run>/genomes/ and live with the run")),
@@ -52,6 +52,7 @@ RUN_OPTIONS = (
 	(("-cl", "--clans"), dict(metavar="TSV", help="Pfam-A.clans.tsv(.gz): colour domains by clan instead of family")),
 	(("-ip", "--interpro"), dict(metavar="TSV", help="InterPro metadata table joined onto the domain table. Default: ~/.flags3/db/interpro/ if present")),
 	(("-ss", "--sismis"), dict(action="store_true", help="Scan the genomic windows for secretion systems with Sismis and draw them as bands")),
+	(("-ts", "--tool_span"), dict(metavar="TOOL=SPAN,...", help="Per-scanner span overriding -sr, in bp each side of the query or 'contig' for the whole contig: genomad=100000,sismis=contig. span= on a tool's row does the same permanently")),
 	(("-gn", "--genomad"), dict(action="store_true", help="Scan the genomic windows for proviruses and plasmids with geNomad and draw them as bands")),
 	(("-gdb", "--genomad_db"), dict(metavar="DIR", help="geNomad database, overriding the db option of the genomad tool row")),
 	(("-df", "--defensefinder"), dict(action="store_true", help="Call anti-phage defence systems on the neighbourhood genes with DefenseFinder")),
@@ -84,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
 		run.add_argument(*flags, **kwargs)
 	_common(run)
 
-	install = sub.add_parser("install", help="Install tools and databases under ~/.flags3; no arguments lists them")
+	install = sub.add_parser("install", help="Install tools and databases under the FlaGs3 home (~/.flags3, or $FLAGS3_HOME); no arguments lists them")
 	install.add_argument("components", nargs="*", metavar="COMPONENT")
 	install.add_argument("path", nargs="?", metavar="PATH", help="Archive, directory or file for a component that takes one (pfam, interpro, defence-hmm, signalp, deeptmhmm)")
 	install.add_argument("--all", action="store_true", help="Every downloadable component")

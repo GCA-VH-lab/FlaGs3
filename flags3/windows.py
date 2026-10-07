@@ -27,6 +27,38 @@ class Cut(Row):
 		return lo, hi, coverage
 
 
+def respan(windows: list[Window], queries: dict[str, tuple[int, int]], span, margin: int) -> list[Window]:
+	out = []
+	for w in windows:
+		length = w.contig_length
+		if span == "contig":
+			out.append(Window(w.row_id, w.assembly, w.contig, length, w.lo, w.hi, 1, length, 1, length))
+			continue
+		q_start, q_end = queries[w.row_id]
+		scan_lo, scan_hi = max(1, q_start - span), min(length, q_end + span)
+		cut_lo, cut_hi = max(1, scan_lo - margin), min(length, scan_hi + margin)
+		out.append(Window(w.row_id, w.assembly, w.contig, length, w.lo, w.hi, scan_lo, scan_hi, cut_lo, cut_hi))
+	return out
+
+
+def parse_span(text: str):
+	text = (text or "").strip().lower()
+	if not text:
+		return None
+	if text == "contig":
+		return "contig"
+	return int(float(text))
+
+
+def tool_spans(text: str) -> dict[str, object]:
+	out = {}
+	for item in (text or "").split(","):
+		name, sep, value = item.partition("=")
+		if sep and name.strip():
+			out[name.strip()] = parse_span(value)
+	return out
+
+
 def merge(windows: list[Window]) -> dict[str, list[Cut]]:
 	by_contig: dict[tuple[str, str], list[Window]] = {}
 	for w in windows:

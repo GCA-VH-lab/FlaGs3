@@ -6,7 +6,7 @@ from typing import ClassVar, Optional
 
 from flags3 import windows
 from flags3.log import debug, note, record_command
-from flags3.schema import MISSING, Annotation, GenomeFiles, Row, Window
+from flags3.schema import Gene, MISSING, Annotation, GenomeFiles, Row, Window
 from flags3.stage import Stage
 from flags3.tools import Tool, Tools, brief
 
@@ -79,11 +79,19 @@ class WindowScan(Stage):
 				"flags3 fetch <run> --{} downloads them.".format(self.name, len(missing), self.name))
 		if not usable:
 			raise ScanError("no genome FASTA for any assembly; run flags3 fetch <run> --{} first".format(self.name))
-		cuts = windows.merge([w for w in rows if w.assembly in usable])
 		batch_mb = tool.options.get("batch_mb")
 		batches = windows.Batches(out / "raw", int(float(batch_mb) * 1_000_000) if batch_mb else windows.MAX_BATCH_BASES)
+		scoped = [w for w in rows if w.assembly in usable]
+		span = windows.tool_spans(config.text("tool_span")).get(self.name)
+		if span is None:
+			span = windows.parse_span(tool.options.get("span", ""))
+		if span is not None:
+			queries = {g.row_id: (g.start, g.end) for g in Gene.iterate(run.stage_file("extract", Gene.FILE)) if g.offset == 0}
+			scoped = windows.respan(scoped, queries, span, config.integer("scan_margin") or 0)
+		cuts = windows.merge(scoped)
 		paths = batches.write(usable, cuts)
-		note("{}: {} windows in {} batch files".format(self.tool_name, len(batches.cuts), len(paths)))
+		note("{}: {} {} in {} batch files".format(self.tool_name, len(batches.cuts),
+			"whole contigs" if span == "contig" else ("windows of {} bp each side".format(span) if span else "windows"), len(paths)))
 		by_record = batches.by_record()
 		placed: list[Placed] = []
 		failed: dict[str, str] = {}

@@ -1,6 +1,7 @@
+import os
 from pathlib import Path
 
-HOME = Path.home() / ".flags3"
+HOME = Path(os.environ["FLAGS3_HOME"]).expanduser() if os.environ.get("FLAGS3_HOME") else Path.home() / ".flags3"
 GENOMES = HOME / "genomes"
 DB = HOME / "db"
 TOOLS = HOME / "tools"

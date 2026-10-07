@@ -406,6 +406,17 @@ assembly, contig and offsets. A hit in record coordinates is placed with
 `Cut.place`, which also decides `full` (inside the analysed span) or
 `partial` (reaching into the margin).
 
+Each scanner can have its own span — `-ts tool=SPAN` per run or `span=`
+on its row — in bp each side of the query or `contig` for the whole
+contig. The stage recomputes that scanner's windows from the query
+coordinates in `genes.tsv` (`windows.respan`, the same arithmetic as the
+extractor's `scan_span`, with `-sm` as margin) before the ordinary
+merge-and-batch path; a tool without a span follows `-sr`. Other contigs
+of the assembly are never scanned: geNomad classifies each sequence on
+its own, so they would add nothing to the query's contig. Defence has no
+span of its own: it follows `-sr` or the neighbourhood, since systems more
+than a few genes from the query are not what the figure is about.
+
 `scan.WindowScan` is the stage base: it resolves genome files, cuts and
 batches, runs the tool per batch, places the hits, and writes
 `annotations.tsv` (`band` in `bp` space, `category` = the called type),
@@ -701,3 +712,10 @@ when the installer writes it, only tool commands, directories and the
 options the installer itself sets (`db=`); any other option found there is
 dropped with a note. Search settings therefore come from the shipped table,
 from `-n`/`-ce`/`-sc`, or from a hand edit made after the last install.
+
+
+## Home directory
+
+`home.py` resolves the FlaGs3 home once at import: `$FLAGS3_HOME` if set,
+otherwise `~/.flags3`. Everything below derives from it, so a server whose
+`$HOME` cannot hold a 100 GB cache sets one variable and installs normally.

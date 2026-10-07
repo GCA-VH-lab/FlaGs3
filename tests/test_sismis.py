@@ -105,3 +105,15 @@ def test_missing_sismis_fails_softly(tmp_path):
 	runner.config = cfg
 	assert runner.execute(Sismis()) is False
 	assert "flags3 install sismis" in run.status("sismis").get("error")
+
+
+def test_per_tool_span(tmp_path):
+	run, runner = _run(tmp_path, ["WP_004"], scan_range=1000, scan_margin=100, gene=1, tool_span="sismis=contig")
+	assert runner.execute(Sismis())
+	cuts = windows.Cut.read(run.stage_file("sismis", "raw/cuts.tsv"))
+	assert [(c.contig, c.cut_lo, c.cut_hi, c.scan_lo, c.scan_hi) for c in cuts] == [("A", 1, 20000, 1, 20000)]
+	run2, runner2 = _run(tmp_path / "b", ["WP_004"], scan_range=1000, scan_margin=100, gene=1, tool_span="sismis=300")
+	assert runner2.execute(Sismis())
+	cut = windows.Cut.read(run2.stage_file("sismis", "raw/cuts.tsv"))[0]
+	assert (cut.scan_lo, cut.scan_hi, cut.cut_lo, cut.cut_hi) == (1700, 2900, 1600, 3000)
+	assert windows.tool_spans("genomad=100000, sismis=contig") == {"genomad": 100000, "sismis": "contig"}

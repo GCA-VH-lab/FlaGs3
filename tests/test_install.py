@@ -1,3 +1,4 @@
+import time
 import gzip
 import tarfile
 from pathlib import Path
@@ -18,6 +19,7 @@ def fake_home(tmp_path, monkeypatch):
 	monkeypatch.setattr(home, "TOOLS", root / "tools")
 	monkeypatch.setattr(home, "ENVS", root / "envs")
 	monkeypatch.setattr(home, "USER_TOOLS_TABLE", root / "tools_table.tsv")
+	monkeypatch.setattr(home, "VERSIONS", root / "versions.tsv")
 	monkeypatch.setattr(home, "PFAM_HMM", root / "db" / "pfam" / "Pfam-A.hmm")
 	monkeypatch.setattr(home, "PFAM_CLANS", root / "db" / "pfam" / "Pfam-A.clans.tsv.gz")
 	monkeypatch.setattr(home, "INTERPRO", root / "db" / "interpro" / "interpro_metadata_processed.tsv")
@@ -157,3 +159,22 @@ def test_flags3_home_override(tmp_path, monkeypatch):
 	assert reloaded.HOME == tmp_path / "elsewhere" and reloaded.GENOMES == tmp_path / "elsewhere" / "genomes"
 	monkeypatch.delenv("FLAGS3_HOME")
 	importlib.reload(home)
+
+
+def test_versions_are_recorded(fake_home, monkeypatch):
+	def fake_create(self, prefix, packages):
+		(prefix / "bin").mkdir(parents=True, exist_ok=True)
+		for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp"):
+			path = prefix / "bin" / name
+			path.write_text("#!/bin/sh\necho '{} 1.2.3'\n".format(name))
+			path.chmod(0o755)
+		return prefix
+
+	monkeypatch.setattr(install.Micromamba, "create", fake_create)
+	monkeypatch.setattr(install.shutil, "which", lambda name: None)
+	installer = install.Installer()
+	installer.run(["core"], {})
+	text = home.VERSIONS.read_text()
+	assert text.startswith("#component\tversion\tdatabase\tinstalled")
+	assert "core\t" in text
+	assert installer.versions()["core"][2] == time.strftime("%Y-%m-%d")

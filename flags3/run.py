@@ -76,6 +76,18 @@ class Config(KeyValueFile):
 		raw = self.values.get(key)
 		return Path(raw) if raw else None
 
+	def tools_table(self) -> Optional[Path]:
+		from flags3 import home
+		recorded = self.path("tools")
+		local = home.user_tools_table()
+		if recorded and recorded.is_file():
+			return recorded
+		if recorded and local:
+			print("Warning: the tool table recorded in this run ({}) is missing; using {}.".format(recorded, local))
+		elif recorded:
+			print("Warning: the tool table recorded in this run ({}) is missing; using the shipped defaults.".format(recorded))
+		return local
+
 	def workers(self) -> int:
 		import os
 		return self.integer("cpu") or os.cpu_count() or 1

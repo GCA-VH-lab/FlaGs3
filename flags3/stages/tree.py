@@ -25,7 +25,7 @@ class Tree(Stage):
 		return config.flag("tree") or config.flag("iqtree") or config.flag("tree_order")
 
 	def run(self, run, config, out: Path) -> None:
-		tools = Tools.load(config.path("tools"))
+		tools = Tools.load(config.tools_table())
 		sequences = {name: seq for name, _, seq in fasta.read(run.stage_file("extract", "queries.faa"))}
 		engine = "iqtree" if config.flag("iqtree") else "veryfasttree"
 		note("building a tree of {} queries with {}".format(len(sequences), engine))

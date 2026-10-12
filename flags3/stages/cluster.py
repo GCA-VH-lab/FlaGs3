@@ -121,7 +121,7 @@ class Cluster(Stage):
 	rna = False
 
 	def run(self, run, config, out: Path) -> None:
-		tools = Tools.load(config.path("tools"))
+		tools = Tools.load(config.tools_table())
 		name = config.text(self.method_key)
 		self.override(tools, name, config)
 		clusterer = cluster.build(tools, name, config.workers(), out / "raw")

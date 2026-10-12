@@ -191,3 +191,42 @@ def test_local_first_mixes_own_genome_with_ipg(tmp_path, monkeypatch):
 	_, targets, _ = _read(run)
 	assert [(t.query, t.assembly) for t in targets] == [("WP_008", "GCF_TEST"), ("WP_777", "GCF_000000003.1")]
 	assert targets[0].status == "ok"
+
+
+def test_one_bad_accession_does_not_fail_its_chunk(monkeypatch):
+	from flags3 import ncbi
+	mapper = ncbi.IpgMapper("a@b.c")
+	tried = []
+
+	def fake_chunk(chunk, result):
+		tried.append(tuple(chunk))
+		if "BAD" in chunk:
+			raise RuntimeError("HTTP Error 400: Bad Request")
+		for p in chunk:
+			result.accessions.setdefault(p, {})["GCF_{}".format(p)] = p
+
+	monkeypatch.setattr(ncbi.IpgMapper, "_ipg_chunk", staticmethod(fake_chunk))
+	result = mapper.map(["A", "B", "BAD", "C", "D"])
+	assert set(result.errors) == {"BAD"}
+	assert sorted(result.assemblies) == ["A", "B", "BAD", "C", "D"]
+	assert [result.assemblies[p] for p in ("A", "B", "C", "D")] == [["GCF_A"], ["GCF_B"], ["GCF_C"], ["GCF_D"]]
+	assert max(len(t) for t in tried) == 5 and min(len(t) for t in tried) == 1
+
+
+def test_an_invalid_api_key_is_dropped_once(monkeypatch, capsys):
+	from flags3 import ncbi
+	mapper = ncbi.IpgMapper("a@b.c", api_key="KEY")
+	seen = []
+
+	def fake_chunk(chunk, result):
+		seen.append(ncbi.Entrez.api_key)
+		if ncbi.Entrez.api_key:
+			raise RuntimeError("HTTP Error 400: Bad Request")
+		for p in chunk:
+			result.accessions.setdefault(p, {})["GCF_" + p] = p
+
+	monkeypatch.setattr(ncbi.IpgMapper, "_ipg_chunk", staticmethod(fake_chunk))
+	result = mapper.map(["A", "B"])
+	assert result.assemblies == {"A": ["GCF_A"], "B": ["GCF_B"]} and not result.errors
+	assert seen == ["KEY", None]
+	assert "key looks invalid" in capsys.readouterr().out

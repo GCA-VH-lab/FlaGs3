@@ -79,3 +79,11 @@ def test_optional_columns_are_filled(tmp_path):
 	assert QueryTarget.read(q)[0].via == "-"
 	with pytest.raises(SchemaError):
 		Annotation.read(path)
+
+
+def test_huge_field_is_readable(tmp_path):
+	from flags3.schema import Family
+	members = ",".join("WP_{:09d}.1".format(i) for i in range(9000))
+	path = tmp_path / "families.tsv"
+	path.write_text("family\tlabel\tsize\toccurrences\tmembers\tsubfamilies\tbridges\n1\tQ1\t9000\t9000\t{}\t-\t-\n".format(members))
+	assert len(Family.read(path)[0].accessions) == 9000

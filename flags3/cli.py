@@ -81,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
 	run.add_argument("-i", "--input_list", action="append", metavar="FILE", default=[], help="Protein accessions, one per line, optionally with a tab and an assembly; a tab and BLAST marks a line as a BlastP starting point. May be repeated")
 	run.add_argument("-o", "--output", default="output")
 	run.add_argument("-nt", "--no_timestamp", action="store_true")
+	run.add_argument("--until", metavar="STAGE", help="Stop after this stage (fetch, extract, cluster, ...), leaving the run ready to continue with flags3 <stage> <run>; for machines where only part of the work has network access")
 	for flags, kwargs in RUN_OPTIONS:
 		run.add_argument(*flags, **kwargs)
 	_common(run)
@@ -89,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
 	batch.add_argument("lists", metavar="DIR", help="Directory of input lists; each file becomes one run named after it")
 	batch.add_argument("-o", "--out", required=True, metavar="DIR", help="Directory the runs go into (<DIR>/<list name>/)")
 	batch.add_argument("--retry", action="store_true", help="Redo runs that exist but did not finish")
-	batch.add_argument("options", nargs=argparse.REMAINDER, help="Options passed to every flags3 run, after --")
+	batch.add_argument("options", nargs="*", help="Options passed to every flags3 run; write them after --")
 	install = sub.add_parser("install", help="Install tools and databases under the FlaGs3 home (~/.flags3, or $FLAGS3_HOME); no arguments lists them")
 	install.add_argument("components", nargs="*", metavar="COMPONENT")
 	install.add_argument("path", nargs="?", metavar="PATH", help="Archive, directory or file for a component that takes one (pfam, interpro, defence-hmm, signalp, deeptmhmm)")
@@ -121,6 +122,11 @@ def _common(parser):
 
 
 def main(argv=None) -> int:
+	argv = list(sys.argv[1:] if argv is None else argv)
+	passthrough: list[str] = []
+	if argv[:1] == ["batch"] and "--" in argv:
+		at = argv.index("--")
+		argv, passthrough = argv[:at], argv[at + 1:]
 	args = build_parser().parse_args(argv)
 	console.capture()
 	atexit.register(console.close)
@@ -129,6 +135,9 @@ def main(argv=None) -> int:
 	try:
 		if args.command == "install":
 			return _install(args)
+		if args.command == "batch":
+			from flags3.batch import Batch
+			return Batch(Path(args.lists), Path(args.out), passthrough + [o for o in args.options if o != "--"], args.retry).run()
 		if args.command == "run":
 			return _run(args)
 		return _stage(args)
@@ -173,7 +182,13 @@ def _run(args) -> int:
 		config.set(key, _resolved(key, getattr(args, key)))
 	config.save()
 	stages = [stage() for stage in PIPELINE]
-	config.set("fetch.slots", sorted({slot for stage in stages if stage.wanted(config) for slot in stage.needs}))
+	if args.until:
+		names = [s.name for s in stages]
+		if args.until not in names:
+			sys.exit("Error: --until {} is not a stage; known: {}".format(args.until, ", ".join(names)))
+		stages = stages[:names.index(args.until) + 1]
+		print(">> stopping after {}; continue with flags3 <stage> {}".format(args.until, run.path))
+	config.set("fetch.slots", sorted({slot for stage in [s() for s in PIPELINE] if stage.wanted(config) for slot in stage.needs}))
 	config.save()
 	results = Runner(run, config).execute_all(stages)
 	print("run directory: {}".format(run.path))

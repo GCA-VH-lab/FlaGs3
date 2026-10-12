@@ -60,7 +60,7 @@ class WindowScan(Stage):
 	kind = "band"
 
 	def run(self, run, config, out: Path) -> None:
-		tools = Tools.load(config.path("tools"))
+		tools = Tools.load(config.tools_table())
 		tool = tools[self.tool_name]
 		found, where = tool.locate()
 		if not found:

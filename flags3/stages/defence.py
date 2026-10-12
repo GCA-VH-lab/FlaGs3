@@ -97,7 +97,7 @@ class Defence(Stage):
 		return any(config.flag(t) for t in TOOLS)
 
 	def run(self, run, config, out: Path) -> None:
-		tools = Tools.load(config.path("tools"))
+		tools = Tools.load(config.tools_table())
 		rows = Window.read(run.stage_file("extract", Window.FILE))
 		scan = config.integer("scan_range") and run.stage_file("extract", SCAN_GENES).is_file()
 		genes = Gene.read(run.stage_file("extract", SCAN_GENES if scan else Gene.FILE))

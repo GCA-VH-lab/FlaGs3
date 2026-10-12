@@ -5,6 +5,7 @@ import platform
 import shutil
 import stat
 import subprocess
+import time
 import sys
 import tarfile
 import urllib.request
@@ -91,6 +92,9 @@ def gunzip(source: Path, target: Path) -> Path:
 	with gzip.open(source, "rb") as src, open(target, "wb") as dst:
 		shutil.copyfileobj(src, dst, 1 << 20)
 	return target
+
+
+MISSING_VERSION = "-"
 
 
 def run(argv: list, prefix: Optional[Path] = None, **kwargs) -> subprocess.CompletedProcess:
@@ -186,6 +190,24 @@ class Component:
 
 	def update(self) -> None:
 		self.install()
+
+	def version(self) -> str:
+		binary = getattr(self, "binary", None)
+		path = binary if isinstance(binary, Path) else (self.prefix / "bin" / binary if isinstance(binary, str) else None)
+		if path is None or not Path(path).is_file():
+			return MISSING_VERSION
+		for flag in ("--version", "version", "-version"):
+			try:
+				done = subprocess.run([str(path), flag], capture_output=True, text=True, timeout=120)
+			except Exception:
+				continue
+			text = (done.stdout or done.stderr).strip().splitlines()
+			if done.returncode == 0 and text:
+				return text[0].strip()
+		return MISSING_VERSION
+
+	def database_version(self) -> str:
+		return MISSING_VERSION
 
 	def set_row(self, name: str, command: str, directory: str = "", **options) -> None:
 		tool = self.tools[name]
@@ -385,15 +407,40 @@ class Mmseqs(Component):
 class Genomad(CondaTool):
 	name = "genomad"
 	summary = "geNomad and its database (1.6 GB) for --genomad"
-	packages = ["genomad"]
+	packages = ["genomad>=1.11"]
 	binary = "genomad"
 	row = "genomad"
 	command = "end-to-end --cleanup --threads {threads} --splits {splits} {in} {out} {db}"
 
+	@property
+	def db_root(self) -> Path:
+		return home.DB / "genomad"
+
+	def db_version(self) -> str:
+		path = self.db_root / "genomad_db" / "version.txt"
+		return path.read_text().strip() if path.is_file() else MISSING_VERSION
+
+	def database_version(self) -> str:
+		return self.db_version()
+
+	def fetched_by(self) -> str:
+		path = self.db_root / "fetched_by.txt"
+		return path.read_text().strip() if path.is_file() else MISSING_VERSION
+
 	def after(self, binary: Path) -> None:
-		db = home.DB / "genomad"
+		db = self.db_root
 		db.mkdir(parents=True, exist_ok=True)
+		current = self.version()
+		if (db / "genomad_db").is_dir() and self.fetched_by() == current and self.db_version() != MISSING_VERSION:
+			say("database v{} already present, fetched by this geNomad ({})".format(self.db_version(), current))
+			return
+		if (db / "genomad_db").is_dir():
+			say("database v{} was fetched by {!r}, this geNomad is {!r}; downloading the matching database".format(
+				self.db_version(), self.fetched_by(), current))
+			shutil.rmtree(db / "genomad_db")
 		run([binary, "download-database", db], prefix=self.prefix)
+		(db / "fetched_by.txt").write_text(current + "\n")
+		say("database v{}".format(self.db_version()))
 		inner = next((p for p in db.iterdir() if p.is_dir() and p.name.startswith("genomad_db")), db)
 		self.set_row(self.row, "{} {}".format(binary, self.command), db=str(inner))
 
@@ -527,6 +574,25 @@ class Installer:
 	def status(self) -> list[tuple[str, str, str]]:
 		return [(c.name, c.installed() or "-", c.summary) for c in self.components.values()]
 
+	def versions(self) -> dict[str, list[str]]:
+		rows = {}
+		if home.VERSIONS.is_file():
+			for line in home.VERSIONS.read_text().splitlines():
+				if line.startswith("#") or not line.strip():
+					continue
+				cells = line.split("\t")
+				if len(cells) >= 4:
+					rows[cells[0]] = cells[1:4]
+		return rows
+
+	def record(self, component) -> None:
+		rows = self.versions()
+		rows[component.name] = [component.version(), component.database_version(), time.strftime("%Y-%m-%d")]
+		with open(home.VERSIONS, "w", encoding="utf-8") as out:
+			out.write("#component\tversion\tdatabase\tinstalled\n")
+			for name in sorted(rows):
+				out.write("\t".join([name] + rows[name]) + "\n")
+
 	def run(self, names: list[str], sources: dict[str, Optional[Path]], update: bool = False, force: bool = False) -> None:
 		for name in names:
 			component = self.components.get(name)
@@ -543,7 +609,8 @@ class Installer:
 			else:
 				component.install(sources.get(name))
 			self.tools.write(home.USER_TOOLS_TABLE, installer=True)
-			say("done; tools table at {}".format(home.USER_TOOLS_TABLE))
+			self.record(component)
+			say("done; tools table at {}, versions at {}".format(home.USER_TOOLS_TABLE, home.VERSIONS))
 
 
 def main(args) -> int:
@@ -553,8 +620,13 @@ def main(args) -> int:
 		names = [c.name for c in COMPONENTS if not c.licensed and c.name != "interpro"]
 	if not names:
 		width = max(len(n) for n in BY_NAME)
+		known = installer.versions()
 		for name, state, summary in installer.status():
-			print("{:{w}}  {:9}  {}".format(name, state, summary, w=width))
+			version, database, _ = known.get(name, (MISSING_VERSION, MISSING_VERSION, ""))
+			stamp = version if database in ("", MISSING_VERSION) else "{} / db {}".format(version, database)
+			print("{:{w}}  {:9}  {:<22}  {}".format(name, state, stamp[:22], summary, w=width))
+		if known:
+			print("\nversions recorded in {}".format(home.VERSIONS))
 		return 0
 	sources = {}
 	if args.path:

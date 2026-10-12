@@ -1,7 +1,10 @@
 import csv
+import sys
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import ClassVar, Iterable, Iterator, Optional, Type, TypeVar
+
+csv.field_size_limit(min(sys.maxsize, 2 ** 31 - 1))
 
 MISSING = "-"
 KINDS = frozenset(("fill", "outline", "band", "wedge", "segment", "triangle"))

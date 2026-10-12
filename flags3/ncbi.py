@@ -38,20 +38,16 @@ class IpgMapper:
 		self.pause = pause
 		Entrez.email = email
 		Entrez.tool = ENTREZ_TOOL
-		if api_key:
-			Entrez.api_key = api_key
+		self.api_key = api_key or None
+		self.key_dropped = False
+		if self.api_key:
+			Entrez.api_key = self.api_key
 
 	def map(self, proteins: list[str]) -> Resolution:
 		result = Resolution()
 		ipg = [p for p in proteins if not p.startswith("XP_")]
 		for start in range(0, len(ipg), self.CHUNK):
-			chunk = ipg[start:start + self.CHUNK]
-			try:
-				self._ipg_chunk(chunk, result)
-			except Exception as error:
-				for p in chunk:
-					result.errors[p] = "IPG: {}: {}".format(type(error).__name__, error)
-				debug("IPG chunk {}-{} failed".format(start, start + len(chunk)), exc=True)
+			self._ipg_with_retry(ipg[start:start + self.CHUNK], result)
 		for protein in proteins:
 			if protein.startswith("XP_"):
 				try:
@@ -60,6 +56,35 @@ class IpgMapper:
 					result.errors[protein] = "BioProject: {}: {}".format(type(error).__name__, error)
 		self._rank(result, proteins)
 		return result
+
+	def _drop_bad_key(self, error) -> bool:
+		if not self.api_key or self.key_dropped or "400" not in str(error):
+			return False
+		self.key_dropped = True
+		Entrez.api_key = None
+		self.api_key = None
+		print("Warning: NCBI refused the request with HTTP 400 while an API key was set; the key looks invalid, "
+			"so the rest of this run goes without it (slower). Check -api, or leave it out.")
+		return True
+
+	def _ipg_with_retry(self, chunk: list[str], result: Resolution) -> None:
+		if not chunk:
+			return
+		try:
+			self._ipg_chunk(chunk, result)
+			return
+		except Exception as error:
+			if self._drop_bad_key(error):
+				self._ipg_with_retry(chunk, result)
+				return
+			if len(chunk) == 1:
+				result.errors[chunk[0]] = "IPG: {}: {}".format(type(error).__name__, error)
+				debug("IPG failed for {}".format(chunk[0]), exc=True)
+				return
+			debug("IPG chunk of {} failed, splitting".format(len(chunk)), exc=True)
+		half = len(chunk) // 2
+		self._ipg_with_retry(chunk[:half], result)
+		self._ipg_with_retry(chunk[half:], result)
 
 	def _rank(self, result: Resolution, proteins: list[str]) -> None:
 		gcf_first = lambda a: (0 if a.startswith("GCF") else 1, a)

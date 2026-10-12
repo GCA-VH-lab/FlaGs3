@@ -167,6 +167,18 @@ truncated file is deleted and downloaded again. No checksums are kept.
 the config is written; fetch and every later stage read that path from
 `config.tsv`, so nothing else knows the difference.
 
+An invalid `-api` key makes NCBI answer every request with HTTP 400, which
+is indistinguishable from a bad accession unless you look for it: the first
+400 while a key is set drops the key, warns, and retries without it, so a
+mistyped key costs a warning and some speed instead of a whole run's
+resolutions.
+
+An IPG lookup carries up to 200 accessions, and NCBI answers the whole
+request or none of it — one suppressed or malformed accession returns
+HTTP 400 for all 200. A failed chunk is therefore split in half and retried,
+recursively, until the failure is isolated to single accessions; only those
+are recorded as errors. The cost is paid only when something fails.
+
 ### Resolution order
 
 - A bare protein goes to IPG, which chooses the assembly (`-m` many,
@@ -371,7 +383,8 @@ run reads that table by default.
 | `interpro` | copies the lab's metadata table into place (not downloadable) |
 | `defence-hmm` | DefenseFinder profiles from the latest GitHub release, for `-db` |
 | `mmseqs` | MMseqs2 release binary under `~/.flags3/tools/`; rewrites the three mmseqs rows |
-| `genomad`, `padloc` | bioconda env plus each tool's own database download |
+| `genomad` | bioconda env pinned to `genomad>=1.11`, plus its database download. geNomad changed Keras major version in 1.9.0; an old geNomad with Keras 3 fails with "Cannot convert 'N' to a shape", a new one with Keras 2 with "cannot import name 'Layer'", and the old recipes lack the upper pin that would stop the solver pairing them — pinning geNomad itself lets its own requirements choose Keras and TensorFlow |
+| `padloc` | bioconda env plus its database download |
 | `defensefinder` | env with Python 3.10 and hmmer, then `pip install mdmparis-defense-finder` as 2.3.0 did (the bioconda package resolves onto a Python without a working MacSyFinder), then `defense-finder update` |
 | `sismis` | env with hmmer, `pip install sismis` |
 | `deeptmhmm` | DeepTMHMM2 (MIT, `fteufel/DeepTMHMM2`) in its own env via pip from GitHub, weights fetched by a warm-up prediction; replaces the licensed DeepTMHMM 1.0 package |
@@ -699,6 +712,20 @@ one fusion) comes out as `a` = 158 ThiF proteins plus 3 fragments, `b` =
 the 50 UvrA/ABC proteins plus the 20 unannotated ones, and `WP_260604591.1`
 as `Q1ab`; the 46-protein subset gives `a:29`, `b:16`, `Q1ab`.
 
+### Versions
+
+`flags3 install` writes `~/.flags3/versions.tsv` — component, tool version,
+database version, date — because a methods section needs those numbers and
+digging them out of each environment afterwards is tedious and error-prone.
+The tool version comes from asking the binary; the database version from
+whatever the tool records (geNomad's `version.txt`, for instance).
+
+geNomad's database and geNomad itself must match: a 1.12 reading a v1.7
+database parses the wrong column and dies on a BUSCO identifier. The
+installer therefore writes `fetched_by.txt` beside the database with the
+geNomad version that downloaded it, and re-downloads when the installed
+geNomad differs.
+
 ### The user tools table holds locations, not settings
 
 Until 3.0.0rc1 `flags3 install` copied every row of the shipped table into
@@ -713,6 +740,18 @@ options the installer itself sets (`db=`); any other option found there is
 dropped with a note. Search settings therefore come from the shipped table,
 from `-n`/`-ce`/`-sc`, or from a hand edit made after the last install.
 
+
+## Paths recorded in a run
+
+`config.tsv` records absolute paths — the genome cache, the tools table, the
+geNomad database — because a stage rerun must use what the run used. A run
+directory copied to another machine would then fail on paths that do not
+exist there, so `Config.tools_table()` falls back to the local
+`~/.flags3/tools_table.tsv` (and from there to the shipped defaults) with a
+warning when the recorded table is missing. An empty value means the same
+thing as a missing one. The genome cache and the tool databases are not
+guessed at: a scanner that cannot find its database says so, since silently
+scanning against a different database would be worse than stopping.
 
 ## Home directory
 

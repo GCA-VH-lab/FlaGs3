@@ -45,3 +45,19 @@ def test_stage_dirs_and_status(tmp_path):
 	run.reset("extract")
 	assert not (out / "junk").exists()
 	assert not run.has("extract")
+
+
+def test_tools_table_falls_back_to_the_local_one(tmp_path, monkeypatch, capsys):
+	from flags3 import home
+	local = tmp_path / "local_tools.tsv"
+	local.write_text("#name\tcommand\nmafft\t/opt/mafft --auto {in}\n")
+	monkeypatch.setattr(home, "USER_TOOLS_TABLE", local)
+	run = RunDir(tmp_path / "r").create("test", "")
+	config = run.config()
+	config.set("tools", str(tmp_path / "gone.tsv"))
+	assert config.tools_table() == local
+	assert "is missing; using" in capsys.readouterr().out
+	config.set("tools", str(local))
+	assert config.tools_table() == local
+	config.set("tools", "")
+	assert config.tools_table() == local

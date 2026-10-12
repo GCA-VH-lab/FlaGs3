@@ -17,8 +17,33 @@ flags3 --version
 
 pipx itself comes from your package manager (`pacman -S python-pipx`,
 `apt install pipx`, `brew install pipx`; then `pipx ensurepath` once).
-To upgrade later: `pipx upgrade flags3`, or `pipx install --force` from
-the updated checkout.
+**Upgrading.** How depends on how it was installed:
+
+```
+# from a clone (the usual route)
+cd FlaGs3 && git pull && pipx install --force ./FlaGs3
+
+# straight from GitHub, no clone to keep
+pipx install --force "git+https://github.com/GCA-VH-lab/FlaGs3.git"
+pipx upgrade flags3                      # works for this route: pipx re-fetches the repository
+
+# a venv or any pip installation
+cd FlaGs3 && git pull && pip install --force-reinstall --no-deps .
+
+# the conda environment from environment.yml
+cd FlaGs3 && git pull && conda activate flags3 && pip install --force-reinstall --no-deps .
+```
+
+`pipx upgrade flags3` only does something when the source is a URL: for a
+local path it reinstalls from that directory as it is now, and it skips the
+work entirely when the version number has not changed, which is why
+`--force` appears above. `flags3 --version` says what is installed.
+
+Upgrading FlaGs3 never touches `~/.flags3/`: the tools, databases and cached
+genomes stay. `flags3 install --update` refreshes the databases;
+`flags3 install` with no arguments lists every component with its version
+and the version of its database, which is also written to
+`~/.flags3/versions.tsv` for a methods section.
 
 Without pipx, a virtual environment does the same job, except that it
 must be activated (`source .venv/bin/activate`) in every new terminal
@@ -364,6 +389,11 @@ A stage that needs files the run never fetched — the genome FASTA for
 `-ss`/`-gn` after a run without them, the RNA FASTA for `-cr` — gets them
 with `flags3 fetch myrun -gn` (or `-ss`, `-cr`), which downloads only what
 is missing into the genome directory; then run the stage.
+
+`flags3 run --until fetch` stops after a named stage and leaves the run
+ready to continue with `flags3 <stage> <run>`. On a cluster whose compute
+nodes have no network, the pattern is `--until fetch` on the login node and
+the rest in the job.
 
 A flag the run had on can be switched off for the rerun with `--no-<option>`,
 e.g. `flags3 features myrun -lth --no-signalp` reruns only the local

@@ -57,6 +57,21 @@ A rewrite. Same analysis, same figures, different construction.
   `q` the other members.
 - `figures/systems_summary.txt`: neighbourhood counts per system type.
 
+- `flags3 install` records what it installed in `~/.flags3/versions.tsv`
+  (component, version, database version, date) and shows it in the listing.
+- The geNomad database is re-downloaded when it was fetched by a different
+  geNomad, instead of failing at run time on a mismatched metadata table.
+- `flags3 run --until STAGE` stops after a stage.
+- `mmseqs_cluster` clusters at 50% bidirectional coverage (was 0), so a
+  domain-sized match no longer joins proteins of very different length.
+- An invalid NCBI API key is detected on the first HTTP 400 and dropped with
+  a warning, instead of failing every lookup.
+- A failing IPG request is bisected, so one bad accession no longer takes
+  up to 199 good ones with it.
+- A run directory copied to another machine falls back to that machine's
+  tools table instead of failing on the recorded path.
+- Tables with very large fields (a family of thousands of members) read back
+  without hitting Python's csv field limit.
 - `flags3 batch DIR -o OUT -- options`: one run per input list, serial,
   restartable.
 - `$FLAGS3_HOME` relocates `~/.flags3` (cache, tools, databases, table).

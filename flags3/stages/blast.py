@@ -90,7 +90,7 @@ class Blast(Stage):
 		evalue = config.number("blast_evalue", 1e-5)
 		hits = config.integer("blast_hits", 50)
 		if mode == "local":
-			tools = Tools.load(config.path("tools"))
+			tools = Tools.load(config.tools_table())
 			return blast.LocalBlast(tools["blastp"], database, evalue, hits, config.workers(), out / "raw")
 		return blast.RemoteBlast(database, evalue, hits, config.text("user_email"),
 			config.number("blast_wait", 60) * 60, report=lambda m: print(">> " + m, flush=True))

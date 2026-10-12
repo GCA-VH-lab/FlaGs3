@@ -12,11 +12,12 @@ CLUSTER_STAGES = ("cluster", "cluster_rna")
 
 class Figure:
 	def __init__(self, data: RunData, spec: FigureSpec, colours: Colours, rows: Optional[list[str]] = None,
-			no_overlaps: bool = False):
+			no_overlaps: bool = False, verdicts: bool = False):
 		self.data = data
 		self.spec = spec
 		self.colours = colours
 		self.no_overlaps = no_overlaps
+		self.verdicts = verdicts
 		self.active = {s: a for s, a in data.annotations.items() if spec.wants(s)}
 		order = data.tree_order if (spec.tree and data.tree_order) else data.order
 		self.rows = [r for r in (rows or order) if r in data.genes]
@@ -40,14 +41,26 @@ class Figure:
 		body = [L.clip_defs()]
 		side: dict[str, list] = {}
 		for stage in L.band_stages:
-			table = self.colours.assign(stage, self.active[stage])
+			placed = [a for a in self.active[stage] if self.data.placement(stage, a) == "coordinates"]
+			whole = [a for a in self.active[stage] if self.data.placement(stage, a) == "whole"]
+			table = self.colours.assign(stage, placed)
 			codes = {c: "{}{}".format(BAND_CODES[stage], i + 1) for i, c in enumerate(table)}
-			svg, per_row, drawn = layers.draw_bands(L, stage, self.active[stage], table, codes, self.spec.value("band_opacity"))
+			svg, per_row, drawn = layers.draw_bands(L, stage, placed, table, codes, self.spec.value("band_opacity"))
 			body.append(svg)
 			for row, items in per_row.items():
 				side.setdefault(row, []).extend(items)
 			self.legend_panels.append((STAGE_TITLES[stage], [(codes[c], self._band_label(stage, c), table[c]) for c in table if c in drawn],
 				stage))
+			if whole and self.verdicts:
+				categories = []
+				for a in whole:
+					if a.category not in categories:
+						categories.append(a.category)
+				wcodes = {c: "W{}".format(i + 1) for i, c in enumerate(categories)}
+				for row, items in layers.whole_codes(L, whole, wcodes).items():
+					side.setdefault(row, []).extend(items)
+				self.legend_panels.append(("{} of the whole contig".format(STAGE_TITLES[stage]),
+					[(wcodes[c], self._band_label(stage, c), palettes.BLACK) for c in categories], None))
 		L.extra_right = layers.side_width(L, side)
 		body.append(layers.draw_genes(L, style))
 		above: dict[str, list] = {}
@@ -222,8 +235,9 @@ class Figure:
 		return '<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" stroke-width="2"/>'.format(x, y, fill, stroke)
 
 
-def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int, no_overlaps: bool) -> list[Figure]:
-	whole = Figure(data, spec, colours, no_overlaps=no_overlaps)
+def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int, no_overlaps: bool = False,
+		verdicts: bool = False) -> list[Figure]:
+	whole = Figure(data, spec, colours, no_overlaps=no_overlaps, verdicts=verdicts)
 	if not whole.rows:
 		return []
 	if whole.layout.tree_w or len(whole.rows) < 2:
@@ -233,5 +247,6 @@ def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int
 	if len(whole.rows) <= capacity:
 		return [whole]
 	rows = whole.rows
-	return [Figure(data, spec, Colours(spec.palette, colours.overrides, spec.monochrome, spec.numbering), rows[i:i + capacity], no_overlaps)
+	return [Figure(data, spec, Colours(spec.palette, colours.overrides, spec.monochrome, spec.numbering), rows[i:i + capacity],
+		no_overlaps, verdicts)
 		for i in range(0, len(rows), capacity)]

@@ -378,8 +378,8 @@ own part, reading the options the run was made with, plus any you give:
 ```
 flags3 figures myrun -f figures.tsv        # redraw
 flags3 cluster myrun -cm mmseqs_cluster    # recluster, then: flags3 report myrun; flags3 figures myrun
-flags3 cluster myrun -cr                   # adds RNA clustering (runs cluster_rna too); for real RNA
-                                           # sequences do flags3 fetch myrun -cr && flags3 extract myrun first
+flags3 cluster_rna myrun -cr               # RNA clustering is its own stage; for real RNA sequences do
+                                           # flags3 fetch myrun -cr && flags3 extract myrun first
 flags3 domains myrun -db defensefinder=~/.flags3/db/defensefinder/profiles -hc defensefinder=0.7,0.5
 flags3 extract myrun -g 8                  # then cluster, tree, domains …, report, figures
 flags3 tree myrun -iq
@@ -463,7 +463,28 @@ band code with its name), `protein_clusters_legend.txt` and, with `-cr`,
 their labels and products, the old `_outdesc` layout), `systems.tsv`
 (each drawn defence, secretion or mobile-element system with the genes
 inside it and the clusters they belong to), and `systems_summary.txt`
-(how many neighbourhoods carry each kind of system, by type).
+(how many neighbourhoods carry each kind of system, by type). These are
+the figures' legends expanded: they list what is drawn and nothing else.
+
+geNomad answers two different questions, and `report/` keeps them apart.
+A **provirus** is found inside the scanned sequence and has coordinates:
+`report/mobile_elements.tsv` lists every one — including those far from any
+query, with `on_query` and `gap_to_query` saying where it sits — and the
+figures draw them. A **classification** applies to the whole scanned
+sequence with no coordinates of its own ("this contig is a plasmid", "this
+is viral"): `report/contig_verdicts.tsv` lists those, and the figures leave
+them out unless asked. `-cv` shows them as a black `W1`, `W2` code beside
+the row — a code, not a band, since a verdict has no boundaries to draw —
+numbered separately from the `M` codes.
+
+A classification only means what it says when geNomad scanned the whole
+contig (`-ts genomad=contig`). On a window it describes that window: a
+100 kb slice of a chromosome scoring "plasmid" means the slice looks
+plasmid-like, and the verdict changes with the window size. FlaGs3 warns
+when `-cv` is used on a run whose geNomad span was not the contig. The
+geNomad stage itself is unchanged: `genomad/mobile_elements.tsv` holds both
+kinds exactly as before, and the split is made when the report and figures
+are written, so it costs nothing to redo.
 
 Every file in `figures/` and `report/` carries the run's start time in its
 name (`neighbors_261006_093847.svg`, `neighbourhoods_261006_093847.tsv`),

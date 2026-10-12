@@ -120,6 +120,18 @@ def draw_bands(layout: Layout, stage: str, annotations: list[Annotation], colour
 	return '<g id="layer-{}">{}</g>'.format(stage, "".join(parts)), side, drawn
 
 
+def whole_codes(layout: Layout, annotations: list[Annotation], codes: dict[str, str]) -> dict[str, list]:
+	out: dict[str, list] = {}
+	by_subject = _by_subject(annotations)
+	for row in layout.rows:
+		window = layout.data.windows[row]
+		for a in by_subject.get("{}|{}".format(window.assembly, window.contig), []):
+			code = codes.get(a.category)
+			if code and (code, palettes.BLACK) not in out.setdefault(row, []):
+				out[row].append((code, palettes.BLACK))
+	return out
+
+
 def draw_side_codes(layout: Layout, per_row: dict[str, list]) -> str:
 	parts = []
 	size = layout.font - 2

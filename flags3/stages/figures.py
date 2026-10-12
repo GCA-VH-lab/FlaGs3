@@ -3,6 +3,7 @@ from pathlib import Path
 from flags3.log import note
 from flags3.render import pdf
 from flags3.render.companions import Companions
+from flags3 import windows
 from flags3.render.data import RunData
 from flags3.render.figure import Figure, parts_for
 from flags3.render.style import Colours, read_overrides, read_table
@@ -23,6 +24,10 @@ class Figures(Stage):
 	def run(self, run, config, out: Path) -> None:
 		specs = read_table(config.path("figures"))
 		data = RunData.load(run)
+		verdicts = config.flag("contig_verdicts")
+		if verdicts and data.whole and windows.tool_spans(config.text("tool_span")).get("genomad") != "contig":
+			print("Warning: whole-sequence classifications are shown, but geNomad scanned windows, not whole contigs; "
+				"a classification then describes the window and changes with its size.")
 		overrides = read_overrides(run.path / COLOURS_FILE)
 		max_height = config.integer("figure_height", 16383)
 		written = []
@@ -35,7 +40,7 @@ class Figures(Stage):
 				note("{}: skipped, no tree".format(spec.name))
 				continue
 			colours = Colours(spec.palette, overrides, spec.monochrome, spec.numbering)
-			figures = parts_for(data, spec, colours, max_height, config.flag("no_overlaps"))
+			figures = parts_for(data, spec, colours, max_height, config.flag("no_overlaps"), verdicts)
 			for i, figure in enumerate(figures):
 				name = spec.name if len(figures) == 1 else "{}_part{}".format(spec.name, i + 1)
 				path = out / run.output_name(config, name + ".svg")
@@ -50,7 +55,7 @@ class Figures(Stage):
 					whole = out / "raw" / (spec.name + "_whole.svg")
 					whole.parent.mkdir(exist_ok=True)
 					whole.write_text(Figure(data, spec, Colours(spec.palette, overrides, spec.monochrome, spec.numbering),
-						no_overlaps=config.flag("no_overlaps")).render())
+						no_overlaps=config.flag("no_overlaps"), verdicts=verdicts).render())
 					pdf.convert(whole, out / run.output_name(config, spec.name + ".pdf"))
 		companions = Companions(data, specs[0].numbering if specs else "occurrence").write_all(out, lambda name: run.output_name(config, name))
 		note("{} figures written, with {}".format(len(written), ", ".join(p.name for p in companions)))

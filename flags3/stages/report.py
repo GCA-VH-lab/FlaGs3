@@ -1,3 +1,4 @@
+import csv
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +114,7 @@ class Report(Stage):
 		self.queries(t, name)
 		self.families(t, name)
 		self.fastas(t, name)
+		self.genomad(run, t, name)
 		self.summary(run, t, name)
 		legacy = out / LEGACY
 		legacy.mkdir(exist_ok=True)
@@ -162,6 +164,44 @@ class Report(Stage):
 		fasta.write(name("flanking.faa"), flanking)
 		fasta.write(name("queries.faa"), queries)
 		fasta.write(name("all.faa"), queries + flanking)
+
+	def genomad(self, run, t: RunTables, name) -> None:
+		path = run.stage_file("genomad", "mobile_elements.tsv")
+		if not path.is_file():
+			return
+		queries: dict[tuple, list] = {}
+		for g in t.genes:
+			if g.offset == 0:
+				queries.setdefault((g.assembly, g.contig), []).append(g)
+		placed, verdicts = [], []
+		with open(path, newline="", encoding="utf-8") as handle:
+			reader = csv.DictReader(handle, delimiter="\t")
+			known = "genomad_coordinates" in (reader.fieldnames or ())
+			for row in reader:
+				coords = (row.get("genomad_coordinates") or "").strip().upper()
+				(verdicts if known and coords in ("", "NA", MISSING) else placed).append(row)
+		columns = ["assembly", "contig", "start", "end", "type", "score", "coverage", "length", "on_query", "gap_to_query", "rows"]
+		for rows, filename in ((placed, "mobile_elements.tsv"), (verdicts, "contig_verdicts.tsv")):
+			with open(name(filename), "w", newline="", encoding="utf-8") as out:
+				writer = csv.writer(out, delimiter="\t", lineterminator="\n")
+				writer.writerow(columns)
+				for row in rows:
+					start, end = int(row["start"]), int(row["end"])
+					gap, on_query = self._gap(queries.get((row["assembly"], row["contig"]), []), start, end)
+					writer.writerow([row["assembly"], row["contig"], start, end, row["type"], row.get("score", MISSING),
+						row.get("coverage", MISSING), end - start + 1, "yes" if on_query else "no",
+						MISSING if gap is None else gap, row.get("rows", MISSING)])
+		note("geNomad: {} elements with coordinates, {} whole-sequence classifications".format(len(placed), len(verdicts)))
+
+	@staticmethod
+	def _gap(queries, start: int, end: int):
+		best = None
+		for g in queries:
+			if start <= g.end and g.start <= end:
+				return 0, True
+			gap = start - g.end if start > g.end else g.start - end
+			best = gap if best is None else min(best, gap)
+		return best, False
 
 	def summary(self, run, t: RunTables, name) -> None:
 		info = run.info()

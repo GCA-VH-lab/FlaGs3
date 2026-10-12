@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.0
+
+- geNomad's whole-sequence classifications are separated from proviruses
+  wherever results are read: `report/mobile_elements.tsv` lists every call
+  with coordinates (with `on_query` and `gap_to_query`), `report/contig_verdicts.tsv`
+  the classifications; the figures and `systems.tsv` show proviruses only,
+  and `-cv` adds the classifications as a black W code with no band. The
+  geNomad stage's own output is unchanged, so existing runs need only
+  `flags3 report` and `flags3 figures`.
+- Guide: `flags3 cluster -cr` no longer claimed to run RNA clustering; it is
+  `flags3 cluster_rna`.
+
 ## 3.0.0
 
 A rewrite. Same analysis, same figures, different construction.

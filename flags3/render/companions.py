@@ -52,7 +52,7 @@ class Companions:
 			if stage not in self.data.present:
 				continue
 			title = STAGE_TITLES[stage].lower()
-			annotations = self.data.annotations.get(stage, [])
+			annotations = [a for a in self.data.annotations.get(stage, []) if self.data.placement(stage, a) == "coordinates"]
 			rows_hit: set = set()
 			per_type: dict[str, set] = {}
 			calls: dict[str, int] = {}
@@ -137,6 +137,8 @@ class Companions:
 			writer.writerow(["stage", "code", "system", "assembly", "contig", "start", "end", "rows", "genes", "products"])
 			for stage in BAND_ORDER:
 				for a in self.data.annotations.get(stage, []):
+					if self.data.placement(stage, a) != "coordinates":
+						continue
 					assembly, _, contig = a.subject.rpartition("|")
 					inside = [g for g in by_contig.get((assembly, contig), []) if g.end >= a.start and g.start <= a.end]
 					rows = sorted({g.row_id for g in inside})

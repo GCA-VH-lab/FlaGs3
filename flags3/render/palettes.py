@@ -1,6 +1,7 @@
 import colorsys
 
 GREY = "#d9d9d9"
+BLACK = "#000000"
 MIDGREY = "#bebebe"
 WHITE = "#ffffff"
 PSEUDO = ("#f2f2f3", "#000080")

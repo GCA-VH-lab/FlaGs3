@@ -14,6 +14,10 @@ class RunData:
 	newick: str
 	annotations: dict[str, list[Annotation]] = field(default_factory=dict)
 	present: set = field(default_factory=set)
+	whole: set = field(default_factory=set)
+
+	def placement(self, stage: str, a: Annotation) -> str:
+		return "whole" if (stage, a.subject, a.start, a.end) in self.whole else "coordinates"
 
 	@classmethod
 	def load(cls, run) -> "RunData":
@@ -37,7 +41,8 @@ class RunData:
 				found = Annotation.read(path)
 				if found:
 					annotations[stage] = found
-		return cls(genes, rows, windows, order, tree_order, newick, annotations, {s for s in run.stages() if run.has(s)})
+		return cls(genes, rows, windows, order, tree_order, newick, annotations,
+			{s for s in run.stages() if run.has(s)}, whole_calls(run))
 
 	def labels(self) -> dict[str, str]:
 		per_query: dict[str, int] = {}
@@ -48,3 +53,19 @@ class RunData:
 			name = row_id if per_query[r.query] > 1 else r.query
 			out[row_id] = "{}  {}".format(name, r.species) if r.species != "-" else name
 		return out
+
+
+def whole_calls(run) -> set:
+	import csv
+	out = set()
+	path = run.stage_file("genomad", "mobile_elements.tsv")
+	if not path.is_file():
+		return out
+	with open(path, newline="", encoding="utf-8") as handle:
+		reader = csv.DictReader(handle, delimiter="\t")
+		if "genomad_coordinates" not in (reader.fieldnames or ()):
+			return out
+		for row in reader:
+			if (row.get("genomad_coordinates") or "").strip().upper() in ("", "NA", "-"):
+				out.add(("genomad", "{}|{}".format(row["assembly"], row["contig"]), int(row["start"]), int(row["end"])))
+	return out

@@ -179,3 +179,29 @@ def test_companion_files(tmp_path):
 	summary = run.stage_file("figures", run.stamped("systems_summary.txt")).read_text()
 	assert "3 neighbourhoods in the run" in summary
 	assert "defence systems in 1 of 3 neighbourhoods (1 call, 1 type):" in summary and "D1 RM" in summary
+
+
+def test_whole_sequence_verdicts_are_separated(tmp_path):
+	from flags3.stages.report import Report
+	run, runner = _run(tmp_path)
+	_fake_stage(run, "genomad", [
+		Annotation("GCF_TEST|A", "bp", 1000, 1299, "band", "Caudoviricetes", "Caudoviricetes", "genomad", 0.97),
+		Annotation("GCF_TEST|A", "bp", 1, 20000, "band", "plasmid", "plasmid", "genomad", 0.98)])
+	(run.stage_dir("genomad") / "mobile_elements.tsv").write_text(
+		"assembly\tcontig\tstart\tend\ttype\tscore\tcoverage\trows\tgenomad_coordinates\n"
+		"GCF_TEST\tA\t1000\t1299\tCaudoviricetes\t0.97\tfull\t-\t1000-1299\n"
+		"GCF_TEST\tA\t1\t20000\tplasmid\t0.98\tfull\t-\t-\n")
+	assert len(RunData.load(run).whole) == 1
+	assert runner.execute(Figures()) and runner.execute(Report())
+	systems = run.stage_file("figures", run.stamped("systems.tsv")).read_text()
+	assert "Caudoviricetes" in systems and "plasmid" not in systems
+	svg = run.stage_file("figures", run.stamped("genomad.svg")).read_text()
+	assert ">W1<" not in svg
+	elements = run.stage_file("report", run.stamped("mobile_elements.tsv")).read_text().splitlines()
+	verdicts = run.stage_file("report", run.stamped("contig_verdicts.tsv")).read_text().splitlines()
+	assert len(elements) == 2 and elements[1].split("\t")[4] == "Caudoviricetes" and elements[1].split("\t")[8] == "no"
+	assert len(verdicts) == 2 and verdicts[1].split("\t")[4] == "plasmid"
+	runner.config.set("contig_verdicts", True)
+	assert runner.execute(Figures())
+	svg = run.stage_file("figures", run.stamped("genomad.svg")).read_text()
+	assert ">W1<" in svg and "of the whole contig" in svg

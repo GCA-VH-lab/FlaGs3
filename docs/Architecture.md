@@ -648,6 +648,24 @@ appends its accessions as bare queries after the list's own, skipping any
 the list already has. Nothing else knows BLAST happened; a rerun of `fetch`
 on the directory picks the accessions up again.
 
+## Proviruses and classifications
+
+geNomad reports two kinds of thing, and only one is an element: a provirus
+has coordinates inside the scanned sequence; a classification is a verdict
+on the whole sequence. The split is made in the report and the figures,
+never in the stage — `genomad/mobile_elements.tsv` and
+`genomad/annotations.tsv` keep the 3.0.0 format, so a stage rerun or a
+reuse of another run's output stays valid. `RunData.whole` recognises a
+classification by the empty `genomad_coordinates` column of the stage's own
+table, present since 3.0.0, so existing runs split with nothing recomputed.
+
+`figures/systems.tsv` and `systems_summary.txt` are the figures' legends
+expanded and list only what is drawn; `report/mobile_elements.tsv` is the
+data and lists every call with coordinates, drawn or not. Classifications
+are shown only with `-cv`, as a black `W` code beside the row: a band
+implies boundaries a verdict does not have, and the separate numbering
+keeps `M` meaning "an element here".
+
 ## Background stages
 
 A stage that mostly waits on the network can declare `background = True`.

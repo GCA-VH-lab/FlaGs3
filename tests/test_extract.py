@@ -164,3 +164,37 @@ def test_circular_contig_overrun_is_silent_and_not_an_edge(tmp_path):
 	runner = Runner(run, cfg, report=lambda m: None)
 	assert runner.execute(Fetch()) and runner.execute(Extract())
 	assert all(not g.contig_edge for g in _genes(run))
+
+
+def test_parallel_extract_is_byte_identical_to_serial(tmp_path, monkeypatch):
+	import filecmp
+	import gzip
+	genomes = tmp_path / "genomes"
+	write_genome(genomes)
+	for n in range(2, 7):
+		for suffix in ("_genomic.gff", "_protein.faa"):
+			src = genomes / ("GCF_TEST" + suffix)
+			text = src.read_text().replace("WP_0", "WP_{}".format(n))
+			(genomes / ("GCF_T{}{}".format(n, suffix))).write_text(text)
+	queries = ["WP_004", "WP_009"] + ["WP_{}04".format(n) for n in range(2, 7)] + ["WP_{}09".format(n) for n in range(2, 7)]
+	listing = tmp_path / "list.txt"
+	listing.write_text("".join("{}\tGCF_T{}\n".format(q, q[3]) if q[3] != "0" else "{}\tGCF_TEST\n".format(q) for q in queries))
+
+	def extract_with(workers, out):
+		run = RunDir(out).create("test", "")
+		(run.input_dir / "list.txt").write_text(listing.read_text())
+		cfg = run.config()
+		cfg.update({"inputs": "list.txt", "genomes": str(genomes), "offline": True, "gene": 2, "scan_range": 1500,
+			"scan_margin": 100, "cpu": workers})
+		cfg.save()
+		runner = Runner(run, cfg, report=lambda m: None)
+		assert runner.execute(Fetch()) and runner.execute(Extract())
+		return run.stage_dir("extract")
+
+	serial = extract_with(1, tmp_path / "serial")
+	parallel = extract_with(4, tmp_path / "parallel")
+	names = sorted(p.name for p in serial.iterdir() if p.name != "status.tsv")
+	assert len(names) >= 8
+	for name in names:
+		assert filecmp.cmp(serial / name, parallel / name, shallow=False), name
+	assert len([l for l in (parallel / "rows.tsv").read_text().splitlines()]) == 1 + len(queries)

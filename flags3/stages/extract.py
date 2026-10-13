@@ -104,6 +104,18 @@ class Outputs:
 		self.queries: dict[str, str] = {}
 		self.rna: dict[str, str] = {}
 
+	def merge(self, other: "Outputs") -> None:
+		self.genes += other.genes
+		self.scan_genes += other.scan_genes
+		self.windows += other.windows
+		self.rows += other.rows
+		self.unmatched += other.unmatched
+		self.ranges += other.ranges
+		for mine, theirs in ((self.proteins, other.proteins), (self.scan_proteins, other.scan_proteins), (self.rna, other.rna)):
+			for key, value in theirs.items():
+				mine.setdefault(key, value)
+		self.queries.update(other.queries)
+
 	def write(self, scan_range: bool, order: dict[str, int]) -> None:
 		rank = lambda row: order.get(row, len(order))
 		self.genes.sort(key=lambda g: (rank(g.row_id), g.start))
@@ -156,23 +168,25 @@ class Extract(Stage):
 				outputs.unmatched.append(Unmatched(target.query, target.assembly, target.status))
 				continue
 			grouped.setdefault(target.assembly, []).append(target)
+		jobs = []
 		for assembly in sorted(grouped):
 			files = genomes.get(assembly)
 			if files is None or not files.usable:
 				for target in grouped[assembly]:
 					outputs.unmatched.append(Unmatched(target.query, assembly, "genome files missing"))
 				continue
-			source = GenomeSource(files)
-			for contig, declared, reached in source.table.overruns:
-				print("Warning: {} {}: the annotation declares the contig {} bp long but a gene ends at {}; "
-					"using {}. The contig is not marked circular, so this is a truncated record or an inconsistent GFF — "
-					"check the genes at that end.".format(assembly, contig, declared, reached, reached))
-			for target in grouped[assembly]:
-				index = source.table.find(target.acceptable)
-				if index is None:
-					outputs.unmatched.append(Unmatched(target.query, assembly, "not in the annotation"))
-					continue
-				self._one(source, target, index, settings, outputs)
+			jobs.append((files, grouped[assembly]))
+		workers = min(config.workers(), len(jobs)) if jobs else 1
+		if workers > 1:
+			from concurrent.futures import ProcessPoolExecutor
+			with ProcessPoolExecutor(max_workers=workers) as pool:
+				results = list(pool.map(extract_assembly, [(files, targets_, settings, out) for files, targets_ in jobs]))
+		else:
+			results = [extract_assembly((files, targets_, settings, out)) for files, targets_ in jobs]
+		for part, warnings in results:
+			for line in warnings:
+				print(line)
+			outputs.merge(part)
 		order = {row_id(t.query, t.assembly): i for i, t in enumerate(targets)}
 		outputs.write(bool(settings.scan_range), order)
 		note("extracted {} rows, {} genes; {} queries unmatched".format(
@@ -180,38 +194,56 @@ class Extract(Stage):
 		if not outputs.rows:
 			raise RuntimeError("no neighbourhood could be extracted for any query")
 
-	def _one(self, source: GenomeSource, target: QueryTarget, index: int,
-			settings: Settings, outputs: Outputs) -> None:
-		hood = Neighbourhood(source.table, index, settings)
-		row = row_id(target.query, target.assembly)
-		q = hood.query
-		contig = hood.contig
-		edge = lambda j: not contig.circular and (j == contig.first or j == contig.last - 1)
-		for j, g in hood.genes():
-			outputs.genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start, g.end,
-				g.strand, g.product or MISSING, g.is_rna, hood.offset(j), edge(j)))
-			if g.is_rna:
-				seq = source.rna_sequence(g)
-				if seq:
-					outputs.rna.setdefault(g.accession, seq)
-			else:
-				seq = source.proteins.get(g.accession)
-				if seq:
-					outputs.proteins.setdefault(g.accession, seq)
-		query_seq = source.proteins.get(q.accession)
-		if query_seq:
-			outputs.queries[row] = query_seq
-		for j, g in hood.scan_genes():
+def extract_assembly(job) -> tuple:
+	files, targets, settings, out = job
+	part = Outputs(out)
+	source = GenomeSource(files)
+	warnings = []
+	for contig, declared, reached in source.table.overruns:
+		warnings.append("Warning: {} {}: the annotation declares the contig {} bp long but a gene ends at {}; "
+			"using {}. The contig is not marked circular, so this is a truncated record or an inconsistent GFF — "
+			"check the genes at that end.".format(files.assembly, contig, declared, reached, reached))
+	for target in targets:
+		index = source.table.find(target.acceptable)
+		if index is None:
+			part.unmatched.append(Unmatched(target.query, files.assembly, "not in the annotation"))
+			continue
+		extract_one(source, target, index, settings, part)
+	return part, warnings
+
+
+def extract_one(source: GenomeSource, target: QueryTarget, index: int,
+	settings: Settings, outputs: Outputs) -> None:
+	hood = Neighbourhood(source.table, index, settings)
+	row = row_id(target.query, target.assembly)
+	q = hood.query
+	contig = hood.contig
+	edge = lambda j: not contig.circular and (j == contig.first or j == contig.last - 1)
+	for j, g in hood.genes():
+		outputs.genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start, g.end,
+			g.strand, g.product or MISSING, g.is_rna, hood.offset(j), edge(j)))
+		if g.is_rna:
+			seq = source.rna_sequence(g)
+			if seq:
+				outputs.rna.setdefault(g.accession, seq)
+		else:
 			seq = source.proteins.get(g.accession)
 			if seq:
-				outputs.scan_proteins.setdefault(g.accession, seq)
-				outputs.scan_genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start,
-					g.end, g.strand, g.product or MISSING, False, hood.offset(j), edge(j)))
-		lo, hi = hood.span()
-		scan_lo, scan_hi = hood.scan_span()
-		cut_lo, cut_hi = hood.scan_span(settings.margin)
-		outputs.windows.append(Window(row, target.assembly, q.contig, hood.contig.length,
-			lo, hi, scan_lo, scan_hi, cut_lo, cut_hi))
-		outputs.rows.append(RowInfo(row, target.query, target.assembly, q.accession, q.contig,
-			q.strand, source.proteins.organism_of(q.accession) or MISSING))
-		outputs.ranges.append(hood.range_report(row))
+				outputs.proteins.setdefault(g.accession, seq)
+	query_seq = source.proteins.get(q.accession)
+	if query_seq:
+		outputs.queries[row] = query_seq
+	for j, g in hood.scan_genes():
+		seq = source.proteins.get(g.accession)
+		if seq:
+			outputs.scan_proteins.setdefault(g.accession, seq)
+			outputs.scan_genes.append(Gene(row, target.assembly, g.contig, g.accession, g.start,
+				g.end, g.strand, g.product or MISSING, False, hood.offset(j), edge(j)))
+	lo, hi = hood.span()
+	scan_lo, scan_hi = hood.scan_span()
+	cut_lo, cut_hi = hood.scan_span(settings.margin)
+	outputs.windows.append(Window(row, target.assembly, q.contig, hood.contig.length,
+		lo, hi, scan_lo, scan_hi, cut_lo, cut_hi))
+	outputs.rows.append(RowInfo(row, target.query, target.assembly, q.accession, q.contig,
+		q.strand, source.proteins.organism_of(q.accession) or MISSING))
+	outputs.ranges.append(hood.range_report(row))

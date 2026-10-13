@@ -666,6 +666,17 @@ are shown only with `-cv`, as a black `W` code beside the row: a band
 implies boundaries a verdict does not have, and the separate numbering
 keeps `M` meaning "an element here".
 
+## Extract runs per assembly
+
+Extraction is parsing: a gzipped GFF and a gzipped protein FASTA per
+assembly, then a few windows cut from the result. Assemblies are
+independent, so each one is a job for a process pool sized by `-c`, and the
+job returns only what was extracted — a few hundred records and sequences —
+never the parsed tables, which would cost more to pickle than to parse. The
+parent merges the results in sorted assembly order, which keeps every output
+file byte-identical to the serial version; the test for this stage diffs the
+two. With one assembly, or `-c 1`, there is no pool.
+
 ## Background stages
 
 A stage that mostly waits on the network can declare `background = True`.

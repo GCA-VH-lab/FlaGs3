@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.1
+
+- `extract` parses genomes in parallel (`-c`), one process per assembly; the
+  output is byte-identical to the serial version. On the toxSAS set this takes
+  the stage from tens of minutes to a few.
+
 ## 3.1.0
 
 - geNomad's whole-sequence classifications are separated from proviruses

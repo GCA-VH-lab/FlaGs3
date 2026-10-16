@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.2
+
+- `--pdf` no longer depends on cairosvg and the native cairo library, which
+  macOS does not ship and pipx cannot install; `render/pdf.py` writes the PDF
+  itself from the SVG. Output is the same figure at one point per pixel, in
+  Helvetica. Characters the PDF fonts cannot show become `?` with a warning
+  naming them; the SVG is unaffected.
+
 ## 3.1.1
 
 - `extract` parses genomes in parallel (`-c`), one process per assembly; the

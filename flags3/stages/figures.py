@@ -47,9 +47,7 @@ class Figures(Stage):
 				path.write_text(figure.render())
 				written.append(path)
 			if config.flag("pdf"):
-				if not pdf.available():
-					print("Warning: --pdf needs cairosvg (pip install cairosvg); SVG only.")
-				elif len(figures) == 1:
+				if len(figures) == 1:
 					pdf.convert(out / run.output_name(config, spec.name + ".svg"), out / run.output_name(config, spec.name + ".pdf"))
 				else:
 					whole = out / "raw" / (spec.name + "_whole.svg")

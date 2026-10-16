@@ -524,9 +524,10 @@ carries a tree, else input order (extract keeps input order).
 layer's `fill` annotations or grey), `draw_bands` (`band`: a hatched
 rectangle across the called span drawn behind the genes, 5 px strokes with
 5 px gaps in the category colour, written as plain `<line>` elements
-inside a clip path rather than as an SVG `<pattern>`, because cairosvg
-rasterises patterns into a washed-out tile in PDFs while every renderer
-draws clipped lines the same way; each band stage hatches at its own angle
+inside a clip path rather than as an SVG `<pattern>`, because every
+renderer draws clipped lines the same way whereas patterns were rasterised
+into a washed-out tile by cairosvg and are outside the vocabulary of the
+PDF writer that replaced it; each band stage hatches at its own angle
 — sismis 45°, genomad −45°, defence horizontal — so overlapping calls
 cross rather than hide each other, and the row height does not grow with
 the number of tools; the band codes `S1`, `M1`, `D1` of a row are written
@@ -600,8 +601,32 @@ A band is drawn behind its genes with a margin (`band_margin`, 6 px) above
 and below the arrow. That margin is all that is visible of a system that
 spans exactly its genes, so it is deliberately wider than the gene outline;
 a legend entry with no visible band on the page means the band lies
-entirely under a gene, not that it failed to render. `--pdf` converts with cairosvg (an optional
-extra); the three other converters 2.3.0 tried are gone.
+entirely under a gene, not that it failed to render.
+
+### PDF
+
+`--pdf` is written by `render/pdf.py`, a translator from the SVG the
+renderer emits to a one-page PDF, with no dependency beyond the standard
+library. The renderer uses a closed vocabulary — `g`, `rect`, `polygon`,
+`line`, `circle`, `text` and `clipPath`, with `stroke`, `stroke-width` and
+`stroke-opacity` inherited from `g` and `fill`, `font-size`, `font-weight`
+and `text-anchor` on the element itself — and the writer draws exactly that
+and nothing more: rectangles become `re`, polygons `m`/`l`/`h`, circles
+four Bézier arcs, clips `q … W n … Q`, stroke opacities one `ExtGState`
+each. Text is set in the standard-14 Helvetica and Helvetica-Bold, which
+no PDF viewer needs to embed and whose metrics are the `CHAR_WIDTH` table
+in `text.py`, so a `text-anchor="middle"` label is centred by the same
+arithmetic the layout used. One SVG pixel is one PDF point. Until October
+2026 this was cairosvg; it went because `cairocffi` loads a native
+`libcairo` at import, which pipx cannot install and macOS does not ship,
+so `--pdf` needed `brew install cairo` and often a `DYLD_FALLBACK_LIBRARY_PATH`
+on top. Two failure modes are deliberate: an SVG element the writer has no
+method for raises, because it means a layer started emitting something new
+and the writer must learn it (the tests render every figure kind to PDF, so
+this surfaces before a release); a character outside WinAnsi, which the
+standard fonts cannot show, is written as `?` with one warning per figure
+naming the characters, because that is the user's organism name, not a
+defect. The three converters 2.3.0 tried as fallbacks are gone.
 
 ## Report
 

@@ -59,10 +59,6 @@ pip install .
 Developers working on the code use `pip install -e ".[test]"` in
 that environment so edits take effect without reinstalling.
 
-`--pdf` needs the cairo library, which Linux has and macOS gets from
-`brew install cairo`; without it SVGs are still written and `--pdf` prints
-a warning.
-
 If you live in conda, the third route is one environment with FlaGs3 and
 the core tools together:
 
@@ -73,8 +69,8 @@ conda activate flags3
 flags3 --version
 ```
 
-That brings mafft, trimal, VeryFastTree, IQ-TREE, BLAST+, MMseqs2 and
-cairo with it, so `flags3 install core` and `flags3 install mmseqs` find
+That brings mafft, trimal, VeryFastTree, IQ-TREE, BLAST+ and MMseqs2
+with it, so `flags3 install core` and `flags3 install mmseqs` find
 them on PATH and build nothing. The environment must be activated in every
 terminal, as any conda environment.
 

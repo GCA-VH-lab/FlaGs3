@@ -1,10 +1,11 @@
 import re
+import zlib
 from pathlib import Path
 
 import pytest
 
 from flags3 import fasta
-from flags3.render import palettes
+from flags3.render import palettes, pdf
 from flags3.render.data import RunData
 from flags3.render.figure import Figure, parts_for
 from flags3.render.style import Colours, FigureSpec, StyleError, parse_row, read_overrides, read_table
@@ -15,6 +16,7 @@ from flags3.stages.cluster import Cluster
 from flags3.stages.extract import Extract
 from flags3.stages.fetch import Fetch
 from flags3.stages.figures import Figures
+from flags3.stages.tree import Leaf
 from tests.synth import write_genome
 
 
@@ -120,6 +122,61 @@ def test_classic_and_parts(tmp_path):
 	assert len(parts_for(data, FigureSpec("n", ["cluster"]), Colours("bright"), max_height=5000, no_overlaps=False)) == 1
 
 
+def _fake_tree(run, rows):
+	out = run.reset("tree")
+	Leaf.write(out / Leaf.FILE, [Leaf(i, r) for i, r in enumerate(rows)])
+	(out / "tree.nwk").write_text("(({}:0.3,{}:0.2):0.1,{}:0.5);".format(*rows))
+	status = run.status("tree")
+	status.set("status", "ok")
+	status.save()
+
+
+def _pdf_content(path):
+	raw = path.read_bytes()
+	assert raw.startswith(b"%PDF-1.4") and raw.rstrip().endswith(b"%%EOF")
+	offsets = [int(m.group(1)) for m in re.finditer(rb"(\d{10}) 00000 n", raw)]
+	for i, offset in enumerate(offsets, 1):
+		assert raw[offset:].startswith("{} 0 obj".format(i).encode())
+	assert raw[int(raw.rsplit(b"startxref", 1)[1].split()[0]):].startswith(b"xref")
+	stream = re.search(rb"/Length (\d+) /Filter /FlateDecode >>\nstream\n", raw)
+	start = stream.end()
+	return zlib.decompress(raw[start:start + int(stream.group(1))]).decode("latin-1")
+
+
+def test_pdf_writer(tmp_path, capsys):
+	run, _ = _run(tmp_path)
+	_fake_stage(run, "domains", [Annotation("WP_004", "aa", 10, 100, "wedge", "PF1", "Dom_1", "pfam", 1e-5)])
+	_fake_stage(run, "features", [Annotation("WP_005", "aa", 1, 20, "triangle", "signal", "SP", "signalp", None),
+		Annotation("WP_005", "aa", 30, 50, "segment", "tm", "TM", "deeptmhmm", None)])
+	_fake_stage(run, "sismis", [Annotation("GCF_TEST|A", "bp", 1000, 3000, "band", "T3SS", "T3SS", "sismis", 0.9)])
+	_fake_stage(run, "defence", [Annotation("GCF_TEST|A", "bp", 2000, 2600, "band", "RM", "RM", "padloc", None)])
+	_fake_tree(run, ["WP_004|GCF_TEST", "WP_009|GCF_TEST", "WP_001|GCF_TEST"])
+	data = RunData.load(run)
+	specs = {
+		"all": FigureSpec("all", ["cluster", "domains", "features", "sismis", "genomad", "defence"], numbers=True),
+		"tree": FigureSpec("tree", ["cluster"], tree=True),
+		"classic": FigureSpec("classic", ["cluster"], mode="classic", palette="classic"),
+	}
+	for name, spec in specs.items():
+		svg = tmp_path / (name + ".svg")
+		svg.write_text(Figure(data, spec, Colours(spec.palette)).render())
+		pdf.convert(svg, tmp_path / (name + ".pdf"))
+		content = _pdf_content(tmp_path / (name + ".pdf"))
+		for label in re.findall(r"<text[^>]*>([^<]+)</text>", svg.read_text()):
+			assert "(" + " ".join(label.split()).replace("(", "\\(").replace(")", "\\)") + ") Tj" in content, (name, label)
+	tree = (tmp_path / "tree.pdf").read_bytes()
+	assert tree.count(b"/ExtGState") == 2 and b"/CA 0.850" in (tmp_path / "all.pdf").read_bytes()
+	assert _pdf_content(tmp_path / "tree.pdf").count(" c ") >= 9 and " W n" in _pdf_content(tmp_path / "all.pdf")
+	odd = tmp_path / "odd.svg"
+	odd.write_text((tmp_path / "all.svg").read_text().replace("</svg>", '<path d="M0 0 L1 1"/></svg>'))
+	with pytest.raises(ValueError, match="<path>"):
+		pdf.convert(odd, tmp_path / "odd.pdf")
+	chars = tmp_path / "chars.svg"
+	chars.write_text((tmp_path / "all.svg").read_text().replace("coli", "Östersund Σ", 1))
+	pdf.convert(chars, tmp_path / "chars.pdf")
+	assert "Σ" in capsys.readouterr().out and "(WP_004 Escherichia Östersund ? K-12) Tj" in _pdf_content(tmp_path / "chars.pdf")
+
+
 def test_figures_stage(tmp_path):
 	run, runner = _run(tmp_path)
 	assert runner.execute(Figures())
@@ -149,7 +206,7 @@ def test_occurrence_numbering():
 
 
 def test_subfamily_shades():
-	from flags3.render import palettes
+	from flags3.render import palettes, pdf
 	ann = [Annotation("a", "-", None, None, "fill", "family:1/a", "1a", "t", None),
 		Annotation("b", "-", None, None, "fill", "family:1/b", "1b", "t", None),
 		Annotation("f", "-", None, None, "fill", "family:1", "1ab", "t", None),

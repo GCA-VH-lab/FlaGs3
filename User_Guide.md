@@ -420,6 +420,19 @@ product. `flanking.faa`, `queries.faa` and `all.faa` carry the sequences;
 every FASTA id is the identifier used in the tables and the product or
 species follows after a space.
 
+`-dg` adds `report/digest.md`: the whole run as one compact document, meant
+to be read straight through or pasted somewhere whole. It opens with what
+every code and column means, then lists every family with its product and
+domains, every system with its code, and for each query the genera it was
+found in, which family sits at which offset in how many neighbourhoods, the
+neighbourhoods that break those patterns, and every neighbourhood as one
+line of `offset accession(family)strand` with its gaps and systems beneath.
+Nothing in it is new analysis — every number comes from the same tables as
+the files above — but the comparisons are already made, which is the part
+that is tedious by eye on a large run. It also makes a readable thing to
+paste into an AI assistant; what such an assistant then adds is its own
+interpretation, not a FlaGs3 result, and the file says so.
+
 `report/legacy/` holds the FlaGs2-era files with the same names and formats
 as before (`<run>_operon.tsv`, `_outdesc.txt`, `_speciesInfo.txt`,
 `_QueryStatus.txt`, `_flankgene_Report.log`, `_clusters.tsv`,

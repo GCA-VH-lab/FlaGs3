@@ -66,6 +66,7 @@ RUN_OPTIONS = (
 	(("-nf", "--no_figures"), dict(action="store_true", help="Write the tables but draw nothing; flags3 figures <run> draws later")),
 	(("-fh", "--figure_height"), dict(type=int, default=16383, metavar="PX", help="Split a figure into parts above this height. Default = 16383")),
 	(("-no", "--no_overlaps"), dict(action="store_true", help="Classic mode: leave the family number out of a gene too small to hold it")),
+	(("-dg", "--digest"), dict(action="store_true", help="Also write report/digest.md, the whole run as one compact document: families, systems, conserved positions, their exceptions and every neighbourhood. Readable on its own, and sized to paste into an AI assistant")),
 	(("-cv", "--contig_verdicts"), dict(action="store_true", help="Also show geNomad's whole-sequence classifications (a contig called plasmid or viral, no coordinates of its own) as a black W code beside the row. Meaningful only when geNomad scanned whole contigs")),
 	(("-pdf", "--pdf"), dict(action="store_true", help="Also write a PDF beside every figure")),
 	(("-c", "--cpu"), dict(type=int, help="Parallel workers (default: auto)")),

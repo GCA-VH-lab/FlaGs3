@@ -116,11 +116,17 @@ class Report(Stage):
 		self.fastas(t, name)
 		self.genomad(run, t, name)
 		self.summary(run, t, name)
+		if config.flag("digest"):
+			self.digest(run, config, t, name)
 		legacy = out / LEGACY
 		legacy.mkdir(exist_ok=True)
 		prefix = run.name
 		Legacy(t, legacy, prefix).write_all()
 		note("report: {} rows, {} queries, legacy tables under report/{}".format(len(t.rows), len(t.input_queries()), LEGACY))
+
+	def digest(self, run, config, t: RunTables, name) -> None:
+		from flags3.digest import FILE, Digest
+		Digest(run, config, t).write(name(FILE))
 
 	def neighbourhoods(self, t: RunTables, name) -> None:
 		rows = []

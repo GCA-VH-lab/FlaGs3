@@ -643,10 +643,43 @@ and is rerun with `flags3 report <run>`.
 | `families.tsv` | protein and RNA families with a representative product |
 | `flanking.faa`, `queries.faa`, `all.faa` | sequences under the one header convention: id, space, description |
 | `run_summary.txt` | version, command, counts, and each stage's status and seconds |
+| `digest.md` | with `-dg`: the whole run as one compact document (below) |
 
 The FASTA convention: the id is the identifier the tables use (accession,
 or `query|assembly` for a row); the product or species follows after a
 space in the description field. No `|product` suffixes.
+
+### Digest
+
+`digest.md`, written by `digest.py` when `-dg` is given, is the run as one
+document: a `## Read` block defining every code and column, `## Families`
+and `## Systems` as the keys, then per query the genus spread, a
+`conserved:` line (which family sits at which offset, in how many
+neighbourhoods, and in how many of those on the query's strand), `dev:`
+lines, and every neighbourhood as three lines — identity, the genes as
+`offset accession(family)strand`, and gaps plus the systems covering them.
+It adds no analysis the tables do not already contain; it precomputes the
+comparisons across neighbourhoods that are tedious by eye, and states the
+products and domains once per family instead of once per gene, which is
+what keeps an 81-neighbourhood run near 40 kB.
+
+A `dev:` line is the exception to a pattern the rest follow: a family
+holding an offset in at least 75 % of a query's neighbourhoods, a strand
+shared by at least 75 % of the neighbourhoods holding it, or a system band
+present in at least 75 % or at most 25 %. Each names the odd neighbourhood
+and what it holds instead. Both thresholds and the 2-and-25 % floor for
+`conserved:` are module constants.
+
+The format was settled by testing: an earlier prose-and-table version was
+pasted into several assistants along with a run carrying three planted
+anomalies (a eukaryotic domain where a conserved family should be, a
+flipped strand, a pseudogene in a restriction-modification system). Without
+`dev:` lines no model found more than one, including on the compact form,
+although every model decoded the notation correctly; with them, all three
+were named. The conclusion the file is built on is that a reader — human or
+model — reads what is stated and does not scan 800 gene rows for the one
+that differs. The last line of `## Read` records the boundary the document
+exists to keep: what FlaGs3 computed, versus what a reader adds.
 
 `report/legacy/<run>_*` reproduces the 2.3.0 files for people and scripts
 that depend on them: `_operon.tsv` (with the query-relative strand of old),

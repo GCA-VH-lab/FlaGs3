@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.0
+
+- `-dg/--digest` writes `report/digest.md`, the whole run as one compact
+  document: what every code means, the families and systems, and per query
+  the conserved positions, the neighbourhoods that break them, and every
+  neighbourhood in one line each. Readable on its own, and small enough to
+  paste whole into an AI assistant.
+
 ## 3.1.2
 
 - `--pdf` no longer depends on cairosvg and the native cairo library, which

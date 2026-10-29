@@ -420,6 +420,29 @@ product. `flanking.faa`, `queries.faa` and `all.faa` carry the sequences;
 every FASTA id is the identifier used in the tables and the product or
 species follows after a space.
 
+`-pf` types plasmid replicons. It takes the contig each query sits on, blasts
+it against the PlasmidFinder database from CGE, and prints the replicon names
+beside the row: `IncX3`, or several when a contig carries several, which is
+common. `flags3 install plasmidfinder` clones the database and indexes it with
+the BLAST+ already in the core environment; no other tool is needed. A replicon
+hit marks a rep gene, not the extent of a plasmid, so it is recorded as a call
+on the whole contig rather than a band over part of it, and `report/replicons.tsv`
+keeps the coordinates, identity and coverage of every hit. The database is built
+mostly from Enterobacteriaceae plus a set of Gram-positive replicons, so outside
+those groups it usually finds nothing, and finding nothing is not evidence that
+a contig is not a plasmid. Where a draft assembly has split a plasmid, the rep
+gene may sit on a different contig from the query, and then nothing is reported
+for the query's contig either.
+
+Replicon names appear on the `plasmids` and `all-in-one` figures without any
+further flag. Whole-contig calls now print their own name rather than a `W`
+code: `IncX3` from `-pf`, `plasmid` or `virus` from geNomad with `-cv` (geNomad's
+whole-sequence calls still need `-cv`, because they describe the window when
+geNomad scanned windows). geNomad and PlasmidFinder
+answer different questions and are not reconciled: if geNomad calls a contig
+chromosomal while a replicon sits on it, both are shown and the disagreement is
+yours to judge.
+
 `-dg` adds `report/digest.md`: the whole run as one compact document, meant
 to be read straight through or pasted somewhere whole. It opens with what
 every code and column means, then lists every family with its product and

@@ -12,6 +12,7 @@ from flags3.stages.extract import Extract
 from flags3.stages.features import Feature, Features
 from flags3.stages.fetch import Fetch
 from flags3.stages.genomad import Genomad, database, plasmid_name, virus_name
+from flags3.stages.plasmidfinder import PlasmidFinder, replicon_type
 from tests.synth import write_genome
 
 FAKE_GENOMAD = """#!/bin/sh
@@ -22,6 +23,12 @@ printf 'seq_name\\tlength\\ttopology\\tcoordinates\\tn_genes\\tvirus_score\\ttax
 printf 'w0|provirus_1\\t300\\tProvirus\\t101-400\\t3\\t0.97\\tViruses;Duplodnaviria;Caudoviricetes\\n' >> "$out/x_summary/x_virus_summary.tsv"
 printf 'seq_name\\tlength\\tplasmid_score\\tconjugation_genes\\tamr_genes\\n' > "$out/x_summary/x_plasmid_summary.tsv"
 printf 'w1\\t2300\\t0.8\\tNA\\tblaTEM\\n' >> "$out/x_summary/x_plasmid_summary.tsv"
+"""
+FAKE_BLASTN = """#!/bin/sh
+out=""; while [ $# -gt 0 ]; do case "$1" in -out) out="$2"; shift;; esac; shift; done
+printf 'w0\\tIncX3_1__JN247852\\t99.5\\t500\\t500\\t1\\t500\\t1200\\t1699\\t0.0\\t900\\n' > "$out"
+printf 'w0\\tIncFIB(K)_1_Kpn3__JN233704\\t98.0\\t450\\t500\\t1\\t450\\t3000\\t3449\\t0.0\\t800\\n' >> "$out"
+printf 'w0\\tColRNAI_1__DQ298019\\t80.0\\t100\\t500\\t1\\t100\\t50\\t150\\t1e-20\\t100\\n' >> "$out"
 """
 FAKE_DF = """#!/bin/sh
 out=""; while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift;; esac; shift; done
@@ -63,10 +70,15 @@ def _tools(tmp_path):
 		"defensefinder\t{} run -o {{out}} {{faa}}\n"
 		"padloc\t{} --faa {{faa}} --gff {{gff}} --outdir {{out}}\n"
 		"deeptmhmm\t{} --fasta {{fasta}} --output-dir {{out}}\n"
+		"plasmidfinder\t{} -query {{in}} -db {{db}} -out {{out}} -evalue {{evalue}} -num_threads {{threads}}\t\t\t\tdb={};span=contig\n"
 		"signalp\t{} --fastafile {{fasta}} --output_dir {{out}}\n".format(
 			_script(tmp_path, "genomad", FAKE_GENOMAD), tmp_path / "gdb",
 			_script(tmp_path, "defense-finder", FAKE_DF), _script(tmp_path, "padloc", FAKE_PADLOC),
-			_script(tmp_path, "deeptmhmm", FAKE_TM), _script(tmp_path, "signalp6", FAKE_SP)))
+			_script(tmp_path, "deeptmhmm", FAKE_TM),
+			_script(tmp_path, "blastn", FAKE_BLASTN), tmp_path / "pfdb",
+			_script(tmp_path, "signalp6", FAKE_SP)))
+	(tmp_path / "pfdb").mkdir()
+	(tmp_path / "pfdb" / "replicons.fsa").write_text(">IncX3_1__JN247852\nACGT\n")
 	(tmp_path / "gdb").mkdir()
 	(tmp_path / "gdb" / "version.txt").write_text("1")
 	return table
@@ -186,3 +198,40 @@ def test_defence_uses_scan_genes_when_scan_range_is_set(tmp_path):
 	run2, runner2 = _run(tmp_path / "b", ["WP_004"], gene=1, defensefinder=True)
 	assert runner2.execute(Defence())
 	assert run2.stage_file("defence", "raw/neighbourhoods.gff").read_text().count("\tCDS\t") == 2
+
+
+def test_plasmidfinder_header_parse():
+	for header, expected in (
+			("IncX3_1__JN247852", "IncX3"),
+			("IncHI2_1__BX664015", "IncHI2"),
+			("IncHI1B(R27)_1_R27_AF250878", "IncHI1B(R27)"),
+			("IncHI1B(pNDM-CIT)_1__JX182975", "IncHI1B(pNDM-CIT)"),
+			("IncB/O/K/Z_1__CU928147", "IncB/O/K/Z"),
+			("IncI1-I(Alpha)_1__AP005147", "IncI1-I(Alpha)"),
+			("repUS7_2_rep(pMG1)_AB206333", "repUS7"),
+			("repUS28_repE(pQY182)_AP013037", "repUS28"),
+			("repUS25_1_LMIVRS16815(pLMIV)_NZ_CM001470", "repUS25"),
+			("rep1_1_repE(pAMbeta)_AF007787 ", "rep1"),
+			("nonsense", "nonsense")):
+		assert replicon_type(header) == (expected, header.strip()), header
+
+
+def test_plasmidfinder_stage(tmp_path):
+	run, runner = _run(tmp_path, ["WP_004"], gene=1, plasmidfinder=True)
+	assert runner.execute(PlasmidFinder())
+	ann = sorted(Annotation.read(run.stage_file("plasmidfinder", Annotation.FILE)), key=lambda a: a.category)
+	assert [(a.subject, a.category, a.kind) for a in ann] == [
+		("GCF_TEST|A", "IncFIB(K)", "verdict"), ("GCF_TEST|A", "IncX3", "verdict")]
+	lines = run.stage_file("plasmidfinder", "replicons.tsv").read_text().splitlines()
+	assert "pf_replicon" in lines[0] and "pf_sequence" in lines[0]
+	assert any("IncX3_1__JN247852" in l for l in lines[1:])
+
+
+def test_plasmidfinder_verdicts_render_as_names(tmp_path):
+	from flags3.render.data import RunData
+	run, runner = _run(tmp_path, ["WP_004"], gene=1, plasmidfinder=True)
+	assert runner.execute(PlasmidFinder())
+	data = RunData.load(run)
+	whole = [a for a in data.annotations["plasmidfinder"] if data.placement("plasmidfinder", a) == "whole"]
+	assert len(whole) == 2
+	assert {data.verdict_label("plasmidfinder", a) for a in whole} == {"IncX3", "IncFIB(K)"}

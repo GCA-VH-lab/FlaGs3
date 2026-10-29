@@ -178,3 +178,29 @@ def test_versions_are_recorded(fake_home, monkeypatch):
 	assert text.startswith("#component\tversion\tdatabase\tinstalled")
 	assert "core\t" in text
 	assert installer.versions()["core"][2] == time.strftime("%Y-%m-%d")
+
+
+def test_plasmidfinder_db_writes_blastn_path(tmp_path, monkeypatch):
+	import stat
+	from flags3 import home, install
+	from flags3.tools import Tools
+	monkeypatch.setattr(home, "HOME", tmp_path)
+	monkeypatch.setattr(home, "ENVS", tmp_path / "envs")
+	monkeypatch.setattr(home, "DB", tmp_path / "db")
+	monkeypatch.setattr(home, "PLASMIDFINDER", tmp_path / "db" / "plasmidfinder")
+	binroot = tmp_path / "envs" / "core" / "bin"
+	binroot.mkdir(parents=True)
+	for name in ("blastn", "makeblastdb"):
+		binary = binroot / name
+		binary.write_text("#!/bin/sh\nexit 0\n")
+		binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
+	source = tmp_path / "clone"
+	source.mkdir()
+	(source / "enterobacteriales.fsa").write_text(">IncX3_1__JN247852\nACGT\n")
+	(source / "gram_positive.fsa").write_text(">repUS7_2_rep(pMG1)_AB206333\nACGT\n")
+	tools = Tools.load(None)
+	install.PlasmidFinderDb(install.Micromamba(), tools).install(source=source)
+	row = tools["plasmidfinder"]
+	assert row.command.startswith(str(binroot / "blastn") + " ")
+	assert "{db}" in row.command and row.options["db"] == str(tmp_path / "db" / "plasmidfinder")
+	assert (tmp_path / "db" / "plasmidfinder" / "replicons.fsa").read_text().count(">") == 2

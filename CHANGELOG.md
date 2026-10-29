@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.3.0
+
+- `-pf/--plasmidfinder` types plasmid replicons on the contig carrying each
+  query, by blastn against the CGE PlasmidFinder database. `flags3 install
+  plasmidfinder` clones and indexes it; no other tool is required. Several
+  replicons on one contig are all reported, in `report/replicons.tsv` and beside
+  the row.
+- Whole-contig calls print their name instead of a `W` code: `IncX3` from
+  `-pf`, `plasmid` or `virus` from geNomad with `-cv`. Figures using `-cv`
+  therefore look different.
+
 ## 3.2.0
 
 - `-dg/--digest` writes `report/digest.md`, the whole run as one compact

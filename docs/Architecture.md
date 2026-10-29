@@ -649,6 +649,50 @@ The FASTA convention: the id is the identifier the tables use (accession,
 or `query|assembly` for a row); the product or species follows after a
 space in the description field. No `|product` suffixes.
 
+### Plasmid replicons
+
+`plasmidfinder` is a `WindowScan` like the others, with two differences. Its
+tool row is plain `blastn` against the CGE replicon database, so there is no
+PlasmidFinder installation and no kma: the installer clones `plasmidfinder_db`,
+concatenates its `.fsa` sets into one `replicons.fsa`, runs `makeblastdb`, and
+records the clone's commit and date in `commit.txt`, which becomes the database
+version in `versions.tsv`. Its row carries `span=contig`, so it scans the whole
+contig each query sits on and nothing else.
+
+The second difference is the glyph kind. A replicon hit locates a rep gene,
+which is not the extent of the plasmid, so the hit is emitted with
+`kind="verdict"` and read as a statement about the contig. `RunData.placement`
+returns `whole` for any `verdict` annotation, which is how the figure, the
+report split and the digest all treat it, and `verdict_label` gives the text to
+print. geNomad's whole-sequence rows reach the same place by the older route,
+the empty `genomad_coordinates` column, and `whole_calls` now returns a map from
+that key to the word to print rather than a bare set.
+
+A `verdict` annotation is drawn whenever its layer is on a figure; the `-cv`
+gate applies only to geNomad's inferred whole-sequence rows, whose meaning
+depends on how much of the contig geNomad saw. A band stage with nothing drawn
+no longer leaves an empty legend header, which `plasmidfinder`, never drawing a
+band, would otherwise always do. The `plasmids` figure carries the layer on its
+own and `all-in-one` includes it.
+
+Those words replaced the `W1`, `W2` codes: the side label is the call itself,
+`IncX3` or `plasmid` or `virus`, and the legend panel is written only where the
+descriptive name differs from the printed word. A code plus a legend lookup was
+two steps to read one fact.
+
+The header parse is the fragile part, and it is deliberately the dumbest rule
+that fits the database: the replicon type is everything before the first
+underscore, and the whole header is kept verbatim as the `pf_sequence` column
+rather than sliced for an accession. The file mixes conventions —
+`IncHI2_1__BX664015` separates the accession with two underscores,
+`IncHI1B(R27)_1_R27_AF250878` with one, `repUS28_repE(pQY182)_AP013037` carries
+no version number, and `repUS25_1_LMIVRS16815(pLMIV)_NZ_CM001470` ends in an
+accession that itself contains an underscore — so any rule that parses further
+to the right breaks on one of them. No type in the 488 sequences contains an
+underscore, which is what makes the first-token rule safe; if that ever changes,
+unrelated replicons would silently merge under one name, so the parse is
+unit-tested against every header shape the database currently holds.
+
 ### Digest
 
 `digest.md`, written by `digest.py` when `-dg` is given, is the run as one

@@ -7,7 +7,7 @@ from typing import ClassVar, Iterable, Iterator, Optional, Type, TypeVar
 csv.field_size_limit(min(sys.maxsize, 2 ** 31 - 1))
 
 MISSING = "-"
-KINDS = frozenset(("fill", "outline", "band", "wedge", "segment", "triangle"))
+KINDS = frozenset(("fill", "outline", "band", "wedge", "segment", "triangle", "verdict"))
 SPACES = frozenset(("aa", "bp", MISSING))
 STRANDS = frozenset(("+", "-"))
 

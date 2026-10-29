@@ -14,10 +14,15 @@ class RunData:
 	newick: str
 	annotations: dict[str, list[Annotation]] = field(default_factory=dict)
 	present: set = field(default_factory=set)
-	whole: set = field(default_factory=set)
+	whole: dict = field(default_factory=dict)
 
 	def placement(self, stage: str, a: Annotation) -> str:
+		if a.kind == "verdict":
+			return "whole"
 		return "whole" if (stage, a.subject, a.start, a.end) in self.whole else "coordinates"
+
+	def verdict_label(self, stage: str, a: Annotation) -> str:
+		return self.whole.get((stage, a.subject, a.start, a.end)) or a.category
 
 	@classmethod
 	def load(cls, run) -> "RunData":
@@ -55,9 +60,9 @@ class RunData:
 		return out
 
 
-def whole_calls(run) -> set:
+def whole_calls(run) -> dict:
 	import csv
-	out = set()
+	out = {}
 	path = run.stage_file("genomad", "mobile_elements.tsv")
 	if not path.is_file():
 		return out
@@ -67,5 +72,6 @@ def whole_calls(run) -> set:
 			return out
 		for row in reader:
 			if (row.get("genomad_coordinates") or "").strip().upper() in ("", "NA", "-"):
-				out.add(("genomad", "{}|{}".format(row["assembly"], row["contig"]), int(row["start"]), int(row["end"])))
+				key = ("genomad", "{}|{}".format(row["assembly"], row["contig"]), int(row["start"]), int(row["end"]))
+				out[key] = (row.get("genomad_kind") or "").strip() or row.get("type") or "called"
 	return out

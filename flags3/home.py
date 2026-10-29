@@ -10,6 +10,7 @@ USER_TOOLS_TABLE = HOME / "tools_table.tsv"
 VERSIONS = HOME / "versions.tsv"
 PFAM_HMM = DB / "pfam" / "Pfam-A.hmm"
 PFAM_CLANS = DB / "pfam" / "Pfam-A.clans.tsv.gz"
+PLASMIDFINDER = DB / "plasmidfinder"
 INTERPRO = DB / "interpro" / "interpro_metadata_processed.tsv"
 
 

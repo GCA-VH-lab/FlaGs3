@@ -4,6 +4,7 @@ tree	cluster,cluster_rna	classic	1	true	classic	false	occurrence
 domains	cluster,cluster_rna,domains,features	versatile	0	false	bright	false	occurrence												
 sismis	cluster,cluster_rna,sismis	versatile	0	false	bright	true	occurrence												
 genomad	cluster,cluster_rna,genomad	versatile	0	false	bright	true	occurrence												
+plasmids	cluster,cluster_rna,plasmidfinder	versatile	0	false	bright	true	occurrence												
 defence	cluster,cluster_rna,defence	versatile	0	false	bright	true	occurrence												
-all-in-one	cluster,cluster_rna,domains,features,sismis,genomad,defence	versatile	1	true	bright	false	occurrence												
+all-in-one	cluster,cluster_rna,domains,features,sismis,genomad,plasmidfinder,defence	versatile	1	true	bright	false	occurrence												
 classic	cluster,cluster_rna	classic	0	true	classic	false	occurrence												

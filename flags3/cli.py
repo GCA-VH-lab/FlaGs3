@@ -54,6 +54,8 @@ RUN_OPTIONS = (
 	(("-ss", "--sismis"), dict(action="store_true", help="Scan the genomic windows for secretion systems with Sismis and draw them as bands")),
 	(("-ts", "--tool_span"), dict(metavar="TOOL=SPAN,...", help="Per-scanner span overriding -sr, in bp each side of the query or 'contig' for the whole contig: genomad=100000,sismis=contig. span= on a tool's row does the same permanently")),
 	(("-gn", "--genomad"), dict(action="store_true", help="Scan the genomic windows for proviruses and plasmids with geNomad and draw them as bands")),
+	(("-pf", "--plasmidfinder"), dict(action="store_true", help="Type plasmid replicons on the contig carrying each query by BLAST against the PlasmidFinder database, and print the replicon names beside the row")),
+	(("-pfdb", "--plasmidfinder_db"), dict(metavar="DIR", help="PlasmidFinder database, overriding the db option of the plasmidfinder tool row")),
 	(("-gdb", "--genomad_db"), dict(metavar="DIR", help="geNomad database, overriding the db option of the genomad tool row")),
 	(("-df", "--defensefinder"), dict(action="store_true", help="Call anti-phage defence systems on the neighbourhood genes with DefenseFinder")),
 	(("-pl", "--padloc"), dict(action="store_true", help="Call anti-phage defence systems with PadLoc; with -df, a system both agree on is drawn once")),
@@ -219,7 +221,7 @@ def _imply(args):
 			setattr(args, implied, True)
 
 
-PATH_KEYS = ("genomes", "tools", "clans", "interpro", "genomad_db", "figures", "blast_input")
+PATH_KEYS = ("genomes", "tools", "clans", "interpro", "genomad_db", "plasmidfinder_db", "figures", "blast_input")
 
 
 def _resolved(key, value):

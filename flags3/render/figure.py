@@ -42,25 +42,27 @@ class Figure:
 		side: dict[str, list] = {}
 		for stage in L.band_stages:
 			placed = [a for a in self.active[stage] if self.data.placement(stage, a) == "coordinates"]
-			whole = [a for a in self.active[stage] if self.data.placement(stage, a) == "whole"]
+			whole = [a for a in self.active[stage] if self.data.placement(stage, a) == "whole" and (a.kind == "verdict" or self.verdicts)]
 			table = self.colours.assign(stage, placed)
 			codes = {c: "{}{}".format(BAND_CODES[stage], i + 1) for i, c in enumerate(table)}
 			svg, per_row, drawn = layers.draw_bands(L, stage, placed, table, codes, self.spec.value("band_opacity"))
 			body.append(svg)
 			for row, items in per_row.items():
 				side.setdefault(row, []).extend(items)
-			self.legend_panels.append((STAGE_TITLES[stage], [(codes[c], self._band_label(stage, c), table[c]) for c in table if c in drawn],
-				stage))
-			if whole and self.verdicts:
+			entries = [(codes[c], self._band_label(stage, c), table[c]) for c in table if c in drawn]
+			if entries:
+				self.legend_panels.append((STAGE_TITLES[stage], entries, stage))
+			if whole:
 				categories = []
 				for a in whole:
 					if a.category not in categories:
 						categories.append(a.category)
-				wcodes = {c: "W{}".format(i + 1) for i, c in enumerate(categories)}
+				wcodes = {a.category: self.data.verdict_label(stage, a) for a in whole}
 				for row, items in layers.whole_codes(L, whole, wcodes).items():
 					side.setdefault(row, []).extend(items)
-				self.legend_panels.append(("{} of the whole contig".format(STAGE_TITLES[stage]),
-					[(wcodes[c], self._band_label(stage, c), palettes.BLACK) for c in categories], None))
+				spelt = [(wcodes[c], self._band_label(stage, c), palettes.BLACK) for c in categories if wcodes[c] != self._band_label(stage, c)]
+				if spelt:
+					self.legend_panels.append(("{} of the whole contig".format(STAGE_TITLES[stage]), spelt, None))
 		L.extra_right = layers.side_width(L, side)
 		body.append(layers.draw_genes(L, style))
 		above: dict[str, list] = {}

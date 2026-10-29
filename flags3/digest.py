@@ -54,11 +54,17 @@ class Digest:
 			for a in self.data.annotations.get(stage, []):
 				self.by_protein.setdefault(a.subject, []).append(a)
 		self.bands: dict[tuple, list[tuple]] = {}
+		self.verdicts: dict[tuple, list[str]] = {}
 		for stage in BAND_ORDER:
 			for a in self.data.annotations.get(stage, []):
+				assembly, _, contig = a.subject.rpartition("|")
 				if self.data.placement(stage, a) == "coordinates":
-					assembly, _, contig = a.subject.rpartition("|")
 					self.bands.setdefault((assembly, contig), []).append((stage, a))
+				else:
+					label = self.data.verdict_label(stage, a)
+					listed = self.verdicts.setdefault((assembly, contig), [])
+					if label not in listed:
+						listed.append(label)
 
 	def write(self, path: Path) -> Path:
 		lines = self.head() + self.read() + self.families() + self.systems()
@@ -102,6 +108,8 @@ class Digest:
 			"gap = bases to the previous gene in the line, one per gene from the second · negative = overlap",
 			"systems = code:first..last offset covered · codes in Systems · nothing listed = the scanner called none there",
 			"edge = the contig ended inside the window; genes missing there are unknown, not absent",
+			"contig = what a scanner called the whole contig the neighbourhood sits on (a plasmid replicon type, or plasmid or "
+			"virus); a call names the contig, not any one gene, and two scanners may disagree on the same contig",
 			"genera = assemblies per genus of this query",
 			"conserved = offset family present/total sameStrand/present · listed at >={} neighbourhoods and >={:.0f} %".format(MIN_ROWS, MIN_FRACTION * 100),
 			"dev = exception to a >={:.0f} % pattern: the neighbourhood, and what it holds instead".format(RULE_FRACTION * 100),
@@ -239,7 +247,10 @@ class Digest:
 				earlier, later = sorted((previous, g), key=lambda x: x.start)
 				gaps.append(str(later.start - earlier.end - 1))
 			previous = g
+		called = self.verdicts.get((info.assembly, info.contig), [])
 		tail = "  gap {}".format(" ".join(gaps))
+		if called:
+			tail += " · contig {}".format(" ".join(called))
 		covered = []
 		for stage, a in self.row_bands(row_id):
 			offsets = [g.offset for g in genes if g.end >= a.start and g.start <= a.end]

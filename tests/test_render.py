@@ -253,7 +253,7 @@ def test_whole_sequence_verdicts_are_separated(tmp_path):
 	systems = run.stage_file("figures", run.stamped("systems.tsv")).read_text()
 	assert "Caudoviricetes" in systems and "plasmid" not in systems
 	svg = run.stage_file("figures", run.stamped("genomad.svg")).read_text()
-	assert ">W1<" not in svg
+	assert ">plasmid<" not in svg
 	elements = run.stage_file("report", run.stamped("mobile_elements.tsv")).read_text().splitlines()
 	verdicts = run.stage_file("report", run.stamped("contig_verdicts.tsv")).read_text().splitlines()
 	assert len(elements) == 2 and elements[1].split("\t")[4] == "Caudoviricetes" and elements[1].split("\t")[8] == "no"
@@ -261,4 +261,4 @@ def test_whole_sequence_verdicts_are_separated(tmp_path):
 	runner.config.set("contig_verdicts", True)
 	assert runner.execute(Figures())
 	svg = run.stage_file("figures", run.stamped("genomad.svg")).read_text()
-	assert ">W1<" in svg and "of the whole contig" in svg
+	assert ">plasmid<" in svg and ">W1<" not in svg

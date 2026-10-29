@@ -17,6 +17,7 @@ from flags3.tools import Tools
 
 MICROMAMBA = "https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-{}"
 CHANNELS = ("conda-forge", "bioconda")
+PLASMIDFINDER_DB = "https://bitbucket.org/genomicepidemiology/plasmidfinder_db.git"
 PFAM_BASE = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release"
 DEFENSE_MODELS = "https://api.github.com/repos/mdmparis/defense-finder-models/releases/latest"
 
@@ -338,6 +339,58 @@ class DefenceHmm(Component):
 		say("use with: -d -db defensefinder={} -hc defensefinder=0.7,0.5".format(target))
 
 
+class PlasmidFinderDb(Component):
+	name = "plasmidfinder"
+	summary = "PlasmidFinder replicon database for --plasmidfinder (a few MB, cloned from CGE)"
+	takes_path = True
+	row = "plasmidfinder"
+
+	@property
+	def directory(self) -> Path:
+		return home.PLASMIDFINDER
+
+	def installed(self) -> Optional[str]:
+		return self.database_version() if (self.directory / "replicons.fsa").is_file() else None
+
+	def database_version(self) -> str:
+		stamp = self.directory / "commit.txt"
+		return stamp.read_text().strip() if stamp.is_file() else MISSING_VERSION
+
+	def blast(self, binary: str) -> Path:
+		here = home.ENVS / "core" / "bin" / binary
+		if here.is_file():
+			return here
+		on_path = shutil.which(binary)
+		if on_path:
+			return Path(on_path)
+		raise InstallError("{} not found; flags3 install core brings BLAST+ with it".format(binary))
+
+	def install(self, source: Optional[Path] = None) -> None:
+		self.directory.mkdir(parents=True, exist_ok=True)
+		clone = self.directory / "plasmidfinder_db"
+		if source is None:
+			if clone.is_dir():
+				shutil.rmtree(clone)
+			say("cloning {}".format(PLASMIDFINDER_DB))
+			run(["git", "clone", "--depth", "1", PLASMIDFINDER_DB, str(clone)])
+			commit = run(["git", "-C", str(clone), "log", "-1", "--format=%H %cs"], capture_output=True, text=True)
+			(self.directory / "commit.txt").write_text(commit.stdout.strip() + "\n")
+		else:
+			clone = Path(source).expanduser()
+		sequences = sorted(clone.glob("*.fsa")) if clone.is_dir() else []
+		if not sequences:
+			raise InstallError("no .fsa sequence files in {}; is this the plasmidfinder_db repository?".format(clone))
+		merged = self.directory / "replicons.fsa"
+		with open(merged, "w", encoding="utf-8") as handle:
+			for path in sequences:
+				handle.write(path.read_text())
+				handle.write("\n")
+		run([str(self.blast("makeblastdb")), "-in", str(merged), "-dbtype", "nucl", "-out", str(self.directory / "replicons")])
+		count = sum(1 for line in merged.read_text().splitlines() if line.startswith(">"))
+		self.set_row(self.row, "{} {}".format(self.blast("blastn"), self.tools.template(self.row)), db=str(self.directory))
+		say("{} replicon sequences from {} sets, indexed for blastn".format(count, len(sequences)))
+
+
 class CondaTool(Component):
 	packages: list[str] = []
 	binary = ""
@@ -560,7 +613,7 @@ class DeepTmhmm2(Component):
 		shutil.rmtree(work, ignore_errors=True)
 
 
-COMPONENTS = (Core, Pfam, InterPro, DefenceHmm, Mmseqs, Genomad, DefenseFinder, Padloc, Sismis, DeepTmhmm2, SignalP)
+COMPONENTS = (Core, Pfam, InterPro, DefenceHmm, Mmseqs, Genomad, PlasmidFinderDb, DefenseFinder, Padloc, Sismis, DeepTmhmm2, SignalP)
 BY_NAME = {c.name: c for c in COMPONENTS}
 
 

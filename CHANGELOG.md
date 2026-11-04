@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.4.0
+
+- ENA genomes: a query paired with an ENA sequence accession
+  (`AAC73113.1<tab>U00096`, a chromosome, plasmid, WGS set or WGS
+  contig) is fetched from the European Nucleotide Archive, a third source
+  beside NCBI and MGnify. The EMBL record is converted to the usual GFF,
+  protein, genome and RNA files once and cached. ENA serves the INSDC
+  submitter annotation, not RefSeq, and such lines need no `-u`. A bare
+  sequence accession on its own line is reported as unresolved.
+
 ## 3.3.0
 
 - `-pf/--plasmidfinder` types plasmid replicons on the contig carrying each

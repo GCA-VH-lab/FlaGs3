@@ -21,8 +21,8 @@ tables) and replaces the glue with three contracts.
 ### Identity
 
 - A **row** is one query in one genome: `row_id = query|assembly`.
-- A **gene** is identified by its accession (or locus tag for local and
-  MGnify genomes). One protein in five rows is scanned once and drawn five
+- A **gene** is identified by its accession (or locus tag for local,
+  MGnify and ENA genomes without a `/protein_id`). One protein in five rows is scanned once and drawn five
   times.
 - A **bp subject** is `assembly|contig`.
 
@@ -206,9 +206,41 @@ are always fetched. Fetch never learns a stage's name, and a stage never
 learns how a file arrived. MGnify offers no RNA FASTA; extract cuts RNA
 sequences from the genome FASTA when it has one.
 
+`fetch` chooses the client by the accession alone (`Fetch._source`):
+`MGYG…` is MGnify, an INSDC sequence or WGS-set accession (`ena.is_ena`)
+is ENA, everything else is NCBI. ENA is a third source beside the other
+two, not a mirror of NCBI: it serves the INSDC record under the
+submitter's annotation and never a RefSeq (`GCF_`, `WP_`) view. One
+download per genome — the EMBL flat file from the Browser API, or the
+`.dat.gz` set file from the WGS FTP area — carries sequence and features
+together, so `ena.EmblRecords` writes all four slots from it at once,
+whatever the run asked for, and the flat file is deleted; the cache then
+holds `ACC.gff.gz`, `ACC.faa.gz`, `ACC.fna.gz` and `ACC.rna.fna.gz`, which
+`GenomeCache` already recognises. A WGS set is cached under its set id
+(`CABHOY01`), so a row named by the master accession is renamed to it on
+the next run exactly as a version-less `GCF_` is. The GFF is written in
+the NCBI shape `genome.GeneTable` reads: one `region` line per record
+(`Is_circular` from the ID-line topology), CDS lines with `protein_id`,
+`locus_tag`, `product` and `pseudo`, RNA lines by feature type. INSDC
+`gene` features are not written at all except for a `/pseudo` gene that
+has no CDS or RNA child, which becomes a `gene_biotype=pseudogene` line
+so the pseudogene is drawn; those orphan lines go at the very end of the
+file, after every record, because `GeneTable` pairs a gene line with
+whatever CDS or RNA follows it in the file and sorts by position
+afterwards. The protein FASTA is built from `/translation` with the OS
+organism in brackets for `ProteinFasta`; the RNA FASTA is always written,
+empty when the record annotates no RNA, so that an RNA-less genome is not
+refetched on every `-cr` run (an empty gzip file passes `net.intact`).
+Only the protein FASTA is withheld, when the record has no translated
+CDS, so that the genome is reported unusable rather than silently empty.
+Bare ENA accessions in the input list are refused in `fetch._resolve`
+before IPG is asked, and `-rm` never sends an ENA-paired query to IPG,
+since a remap could only move it to NCBI.
+
 `net.py` holds the rate limiter (5/s, 10/s with an API key), the retrying
 session and the atomic download. `ncbi.py` holds IPG, the `XP_` BioProject
-path and the partitioned FTP layout; `mgnify.py` the API v2 lookup. Tests
+path and the partitioned FTP layout; `mgnify.py` the API v2 lookup;
+`ena.py` the accession patterns, URLs and the EMBL normaliser. Tests
 replace the two network seams (`IpgMapper._fetch_ipg`, `NcbiGenomes.listing`
 and `.stream`) with recorded responses and run offline.
 

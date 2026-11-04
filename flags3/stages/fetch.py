@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from flags3 import fasta, mgnify, ncbi, net
+from flags3 import ena, fasta, mgnify, ncbi, net
 from flags3.inputs import InputList
 from flags3.log import note
 from flags3.schema import MISSING, Failure, GenomeFiles, QueryTarget
@@ -15,6 +15,7 @@ EXTENSIONS = {
 	"genome": (".fna", ".fna.gz"),
 }
 INFIX = ("_genomic", "_protein", "_rna_from_genomic", "_cds_from_genomic")
+SOURCES = ("mgnify", "ena", "ncbi")
 
 
 def _basename(name: str, exts) -> Optional[str]:
@@ -129,6 +130,9 @@ class Fetch(Stage):
 		targets: list[QueryTarget] = []
 		if offline:
 			for protein, assembly in inputs.entries:
+				if not assembly and ena.is_ena(protein):
+					targets.append(self._bare_ena(protein))
+					continue
 				base = cache.find(assembly) if assembly else cache.by_protein(protein)
 				reason = "unresolved: not in the genome directory" if assembly else "unresolved: not in any genome in the directory"
 				targets.append(QueryTarget(protein, base or assembly or MISSING, MISSING, "ok" if base else reason,
@@ -143,9 +147,11 @@ class Fetch(Stage):
 					found_locally[protein] = base
 			if found_locally:
 				note("{} bare queries found in the genome directory; the rest go to IPG".format(len(found_locally)))
-		mapper = self._mapper(config) if any(p not in found_locally for p in inputs.unpaired) or (config.flag("remap") and inputs.paired) else None
 		remap = config.flag("remap")
-		lookup = [p for p in inputs.unpaired if p not in found_locally] + ([p for p, _ in inputs.paired] if remap else [])
+		lookup = [p for p in inputs.unpaired if p not in found_locally and not ena.is_ena(p)]
+		if remap:
+			lookup += [p for p, a in inputs.paired if not ena.is_ena(a)]
+		mapper = self._mapper(config) if lookup else None
 		result = mapper.map(lookup) if (lookup and mapper) else ncbi.Resolution()
 		for protein, reason in result.errors.items():
 			failures.append(Failure(protein, reason))
@@ -158,6 +164,9 @@ class Fetch(Stage):
 			if protein in found_locally:
 				targets.append(QueryTarget(protein, found_locally[protein], MISSING, "ok", "local"))
 				continue
+			if ena.is_ena(protein):
+				targets.append(self._bare_ena(protein))
+				continue
 			chosen = result.assemblies.get(protein) or []
 			if not chosen:
 				reason = result.errors.get(protein, "unresolved: IPG lists no assembly")
@@ -166,6 +175,11 @@ class Fetch(Stage):
 			for choice in chosen:
 				targets.append(QueryTarget(protein, choice, ",".join(sorted(result.aliases(protein, choice))) or MISSING, "ok", "ipg"))
 		return targets
+
+	@staticmethod
+	def _bare_ena(accession: str) -> QueryTarget:
+		return QueryTarget(accession, MISSING, MISSING,
+			"unresolved: an ENA sequence accession needs a protein on its line: PROTEIN<tab>" + accession, "ena")
 
 	@staticmethod
 	def _paired(protein, assembly, result, remap, failures) -> QueryTarget:
@@ -204,20 +218,29 @@ class Fetch(Stage):
 				*(str(have[s]) if s in have else MISSING for s in SLOTS))
 		return genomes
 
+	@staticmethod
+	def _client(label: str):
+		return {"mgnify": mgnify.MgnifyGenomes, "ena": ena.EnaGenomes, "ncbi": ncbi.NcbiGenomes}[label]
+
+	@staticmethod
+	def _source(assembly: str) -> str:
+		if mgnify.is_mgnify(assembly):
+			return "mgnify"
+		if ena.is_ena(assembly):
+			return "ena"
+		return "ncbi"
+
 	def _download(self, wanted, config, cache, found, source, failures):
 		from concurrent.futures import ThreadPoolExecutor
 		rate = 10.0 if config.text("api_key") else 5.0
 		workers = min(config.workers(), 10)
-		groups = {
-			"mgnify": {a: s for a, s in wanted.items() if mgnify.is_mgnify(a)},
-			"ncbi": {a: s for a, s in wanted.items() if not mgnify.is_mgnify(a)},
-		}
+		groups = {label: {a: s for a, s in wanted.items() if self._source(a) == label} for label in SOURCES}
 		groups = {label: group for label, group in groups.items() if group}
 		for label, group in groups.items():
 			note("downloading {} genomes from {}".format(len(group), label))
 
 		def fetch(label):
-			client = (mgnify.MgnifyGenomes if label == "mgnify" else ncbi.NcbiGenomes)(cache.directory, rate, workers)
+			client = self._client(label)(cache.directory, rate, workers)
 			progress = lambda done, total: note("{}: {}/{}".format(label, done, total))
 			return label, client, client.fetch_many(groups[label], progress)
 

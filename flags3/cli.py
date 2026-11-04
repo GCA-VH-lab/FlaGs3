@@ -30,7 +30,7 @@ RUN_OPTIONS = (
 	(("-nc", "--no_cross_db"), dict(action="store_true", help="RefSeq proteins resolve only to GCF_ assemblies, INSDC only to GCA_")),
 	(("-rm", "--remap"), dict(action="store_true", help="Ask IPG about paired queries too, so an accession renamed in its assembly still matches")),
 	(("-gd", "--genomes"), dict(metavar="DIR", default=str(home.GENOMES), help="Genome cache: looked in first, downloaded into, never emptied. Default = genomes/ under the FlaGs3 home (~/.flags3 or $FLAGS3_HOME)")),
-	(("--offline",), dict(action="store_true", help="Resolve queries only against the genome directory; no NCBI or MGnify access")),
+	(("--offline",), dict(action="store_true", help="Resolve queries only against the genome directory; no NCBI, ENA or MGnify access")),
 	(("-lf", "--local_first"), dict(action="store_true", help="Look bare queries up in the genome directory's protein files before asking IPG, so your own assemblies and NCBI queries can share one list")),
 	(("--no_cache",), dict(action="store_true", help="Neither read nor fill the genome cache: genomes are downloaded into <run>/genomes/ and live with the run")),
 	(("-cm", "--cluster_method"), dict(default="jackhmmer", metavar="NAME", help="Row of the tools table that finds homologous flanking proteins. Default = jackhmmer")),

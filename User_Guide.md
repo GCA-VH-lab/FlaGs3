@@ -144,7 +144,7 @@ later run. Nothing is ever deleted from it. Three flags change that:
 
 ```
 -gd DIR       use this directory instead: looked in first, downloaded into
---offline     use the directory only; never contact NCBI or MGnify
+--offline     use the directory only; never contact NCBI, ENA or MGnify
 -lf           look bare queries up in the directory before asking NCBI
 --no_cache    leave the cache alone: download into <run>/genomes/ instead
 ```
@@ -175,6 +175,7 @@ A text file, one query per line:
 WP_005328829.1
 NP_416433.1	GCF_000005845.2
 MGYG000454827_00001	MGYG000454827
+AAC73113.1	U00096
 # comments and blank lines are ignored
 ```
 
@@ -194,6 +195,16 @@ MGYG000454827_00001	MGYG000454827
   there.
 - MGnify genome accessions (`MGYG…`) are recognised and fetched from the
   MGnify catalogue; their proteins are named by locus tag.
+- ENA sequence accessions are recognised and fetched from the European
+  Nucleotide Archive: a chromosome or plasmid record (`U00096`,
+  `CP003200.1`), a WGS set (`CABHOY01` or its master `CABHOY010000000`) or
+  one WGS contig (`CABHOY010000012`). The line is `PROTEIN<tab>ACCESSION`
+  with the protein named as it is in that record (`/protein_id`, or the
+  locus tag when there is none); a bare sequence accession on a line of
+  its own is reported as unresolved. ENA serves the INSDC record as the
+  submitter annotated it, so the gene names and products are the
+  submitter's, not RefSeq's, and an unannotated record yields no genome.
+  These lines need no `-u`.
 - Several lists can be given: `-i a.txt -i b.txt`.
 
 ### Starting from one protein: BlastP

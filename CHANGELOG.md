@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.0
+
+- `flags3 cache [DIR]` reports the genome cache (genomes, size, age of last
+  use) and `--prune DAYS` deletes every genome not used by any run for that
+  many days, `--dry-run` only listing them. Cache hits now record the use by
+  setting the files' atime (mtime stays the download time), so pruning is
+  by last use, not by download date. Nothing is pruned unless asked.
+
 ## 3.4.0
 
 - ENA genomes: a query paired with an ENA sequence accession

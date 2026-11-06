@@ -167,6 +167,14 @@ test, or a one-off on hundreds of assemblies. They still land in
 `<run>/genomes/`, so every stage can be rerun; deleting the run directory
 deletes them.
 
+The cache is never emptied on its own. `flags3 cache` shows what is in it
+(genomes, size, how long ago each was last used); `flags3 cache --prune 30`
+deletes every genome no run has used for 30 days, `--dry-run` first lists
+what that would be. A genome counts as used every time a run takes it from
+the cache, so what you work on regularly stays and what you fetched once
+goes. Give the directory as an argument when it is not the default
+(`flags3 cache /shared/genomes --prune 90`).
+
 ## 3. The input list
 
 A text file, one query per line:

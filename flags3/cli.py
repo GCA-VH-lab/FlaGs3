@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
 	install.add_argument("--all", action="store_true", help="Every downloadable component")
 	install.add_argument("--update", action="store_true", help="Refresh databases and environments of installed components")
 	install.add_argument("--force", action="store_true", help="Reinstall a component even if it is already installed")
+	cache = sub.add_parser("cache", help="Show the genome cache; with --prune, delete genomes not used for that many days")
+	cache.add_argument("directory", nargs="?", default=str(home.GENOMES), metavar="DIR", help="Cache directory. Default = the -gd default")
+	cache.add_argument("--prune", type=int, metavar="DAYS", help="Delete every genome whose files were last used more than DAYS days ago")
+	cache.add_argument("--dry-run", action="store_true", help="With --prune, list what would be deleted and delete nothing")
 
 	for name in BY_NAME:
 		stage = sub.add_parser(name, help="Rerun the {} stage on an existing run directory".format(name))
@@ -139,6 +143,9 @@ def main(argv=None) -> int:
 	try:
 		if args.command == "install":
 			return _install(args)
+		if args.command == "cache":
+			from flags3 import cache
+			return cache.main(args)
 		if args.command == "batch":
 			from flags3.batch import Batch
 			return Batch(Path(args.lists), Path(args.out), passthrough + [o for o in args.options if o != "--"], args.retry).run()

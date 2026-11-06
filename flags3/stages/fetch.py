@@ -1,3 +1,5 @@
+import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +30,13 @@ def _basename(name: str, exts) -> Optional[str]:
 					break
 			return stem
 	return None
+
+
+def _touch(path: Path) -> None:
+	try:
+		os.utime(path, (time.time(), path.stat().st_mtime))
+	except OSError:
+		pass
 
 
 class GenomeCache:
@@ -67,6 +76,7 @@ class GenomeCache:
 				continue
 			if net.intact(path):
 				good[slot] = path
+				_touch(path)
 			else:
 				path.unlink(missing_ok=True)
 				del self.index[base][slot]

@@ -167,6 +167,21 @@ truncated file is deleted and downloaded again. No checksums are kept.
 the config is written; fetch and every later stage read that path from
 `config.tsv`, so nothing else knows the difference.
 
+Nothing is deleted automatically, but the cache keeps enough to let an
+owner prune it. `GenomeCache.files` sets the atime of every cached file it
+hands to a run to now, leaving mtime alone (`os.utime(path, (now,
+st_mtime))`, errors ignored so a read-only cache still works): atime is
+"last used", mtime is "downloaded", and the convention holds whatever the
+filesystem's `relatime`/`noatime` mount option. `flags3 cache [DIR]`
+(`cache.py`) reads the index back through `GenomeCache`, groups each
+genome's slot files, and reports count, size and the age range of last
+use; `--prune DAYS` deletes every genome whose newest atime or mtime is
+older than DAYS days, all of its slot files together, `--dry-run` only
+lists them. Pruning needs no lock against running jobs: a run touches a
+genome in `files()` before reading it, so a genome in use is at most
+seconds old to the pruner. The web service runs the prune nightly from a
+timer; the command-line default is to never prune.
+
 An invalid `-api` key makes NCBI answer every request with HTTP 400, which
 is indistinguishable from a bad accession unless you look for it: the first
 400 while a key is set drops the key, warns, and retries without it, so a

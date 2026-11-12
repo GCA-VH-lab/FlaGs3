@@ -1,3 +1,4 @@
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,6 +11,11 @@ from flags3.log import debug
 from flags3.net import Downloader
 
 ENTREZ_TOOL = "flags3"
+API_KEY_ENV = "NCBI_API_KEY"
+
+
+def api_key(config) -> str:
+	return config.text("api_key") or os.environ.get(API_KEY_ENV, "").strip()
 REFSEQ_PROTEIN = re.compile(r"^[A-Z]{2}_")
 ASSEMBLY = re.compile(r"GC[AF]_\d+\.\d+")
 SUFFIX = {"gff": "_genomic.gff.gz", "faa": "_protein.faa.gz",

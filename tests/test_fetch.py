@@ -230,3 +230,19 @@ def test_an_invalid_api_key_is_dropped_once(monkeypatch, capsys):
 	assert result.assemblies == {"A": ["GCF_A"], "B": ["GCF_B"]} and not result.errors
 	assert seen == ["KEY", None]
 	assert "key looks invalid" in capsys.readouterr().out
+
+
+def test_api_key_falls_back_to_the_environment(monkeypatch, tmp_path):
+	from flags3 import ncbi
+	from flags3.run import RunDir
+	run = RunDir(tmp_path / "out").create("test", "")
+	cfg = run.config()
+	monkeypatch.delenv(ncbi.API_KEY_ENV, raising=False)
+	assert ncbi.api_key(cfg) == ""
+	monkeypatch.setenv(ncbi.API_KEY_ENV, " ENVKEY ")
+	assert ncbi.api_key(cfg) == "ENVKEY"
+	cfg.update({"api_key": "CLIKEY"})
+	assert ncbi.api_key(cfg) == "CLIKEY"
+	cfg.update({"api_key": ""})
+	cfg.save()
+	assert "ENVKEY" not in run.config_file.read_text()

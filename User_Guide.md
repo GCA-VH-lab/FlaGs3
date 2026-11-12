@@ -256,6 +256,14 @@ flags3 run -i list.txt -u you@example.org -o myrun
 directory; a timestamp is appended unless you add `-nt`. The run prints one
 line as each stage starts and finishes, more with `-vb`.
 
+An NCBI API key doubles the request rate. Give it as `-api KEY`, or put it
+in the environment as `NCBI_API_KEY` and leave `-api` out. A run records
+its command line and options (`run.tsv`, `config.tsv`, the run summary,
+the digest), so a key given as `-api` is written there and shows in the
+machine's process list while the run lasts; a key in the environment
+appears in neither. Use the variable on shared machines and for anything
+whose run directory you hand to someone else.
+
 ### What to analyse
 
 ```

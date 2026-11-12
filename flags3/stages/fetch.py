@@ -132,7 +132,7 @@ class Fetch(Stage):
 		email = config.text("user_email")
 		if not email:
 			raise RuntimeError("NCBI resolution needs -u/--user_email; use --offline for genomes you supply yourself")
-		return ncbi.IpgMapper(email, api_key=config.text("api_key") or None,
+		return ncbi.IpgMapper(email, api_key=ncbi.api_key(config) or None,
 			max_assemblies=config.integer("max_assemblies", 1), cross_db=not config.flag("no_cross_db"))
 
 	def _resolve(self, inputs: InputList, config, cache: GenomeCache, offline: bool,
@@ -242,7 +242,7 @@ class Fetch(Stage):
 
 	def _download(self, wanted, config, cache, found, source, failures):
 		from concurrent.futures import ThreadPoolExecutor
-		rate = 10.0 if config.text("api_key") else 5.0
+		rate = 10.0 if ncbi.api_key(config) else 5.0
 		workers = min(config.workers(), 10)
 		groups = {label: {a: s for a, s in wanted.items() if self._source(a) == label} for label in SOURCES}
 		groups = {label: group for label, group in groups.items() if group}

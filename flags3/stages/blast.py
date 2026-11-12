@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from Bio import Entrez
 
-from flags3 import blast
+from flags3 import blast, ncbi
 from flags3.inputs import InputList
 from flags3.log import note
 from flags3.schema import Row
@@ -56,8 +56,8 @@ class Blast(Stage):
 			raise blast.BlastError("remote BLAST needs -u/--user_email")
 		Entrez.email = email
 		Entrez.tool = "flags3"
-		if config.text("api_key"):
-			Entrez.api_key = config.text("api_key")
+		if ncbi.api_key(config):
+			Entrez.api_key = ncbi.api_key(config)
 		searcher = self._searcher(mode, config, out)
 		rows, accessions, seen = [], [], set()
 		for query in queries:

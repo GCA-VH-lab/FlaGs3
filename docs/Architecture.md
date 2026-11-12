@@ -182,6 +182,14 @@ genome in `files()` before reading it, so a genome in use is at most
 seconds old to the pruner. The web service runs the prune nightly from a
 timer; the command-line default is to never prune.
 
+The API key comes from `-api` or, when that is absent, from the
+`NCBI_API_KEY` environment variable (`ncbi.api_key(config)`, the one place
+all three users of the key ask). The variable exists because a run writes
+its command line and options into `run.tsv`, `config.tsv`, the run summary
+and the digest, and the command line is visible in the process list: a
+service that hands run directories to its users must not put a key there.
+The environment value is read at use and never stored in the config.
+
 An invalid `-api` key makes NCBI answer every request with HTTP 400, which
 is indistinguishable from a bad accession unless you look for it: the first
 400 while a key is set drops the key, warns, and retries without it, so a

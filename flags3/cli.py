@@ -25,7 +25,7 @@ RUN_OPTIONS = (
 	(("-bh", "--blast_hits"), dict(type=int, default=50, help="Hits carried forward as queries; each one is a genome and a row. Default = 50")),
 	(("-bw", "--blast_wait"), dict(type=float, default=60, help="Minutes to wait on NCBI's queue before giving up. Default = 60")),
 	(("-u", "--user_email"), dict(help="Email address, required by NCBI Entrez")),
-	(("-api", "--api_key"), dict(help="NCBI API key; raises the request rate")),
+	(("-api", "--api_key"), dict(help="NCBI API key; raises the request rate. Without -api, the NCBI_API_KEY environment variable is used, which keeps the key out of the run's files and the process list")),
 	(("-m", "--max_assemblies"), dict(type=int, default=1, help="Max assemblies per bare protein query. Default = 1")),
 	(("-nc", "--no_cross_db"), dict(action="store_true", help="RefSeq proteins resolve only to GCF_ assemblies, INSDC only to GCA_")),
 	(("-rm", "--remap"), dict(action="store_true", help="Ask IPG about paired queries too, so an accession renamed in its assembly still matches")),

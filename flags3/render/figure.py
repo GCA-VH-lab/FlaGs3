@@ -40,10 +40,11 @@ class Figure:
 		style = layers.GeneStyle(L, fills, overlaid, self.spec.classic)
 		body = [L.clip_defs()]
 		side: dict[str, list] = {}
+		band_tables = self._band_tables()
 		for stage in L.band_stages:
 			placed = [a for a in self.active[stage] if self.data.placement(stage, a) == "coordinates"]
 			whole = [a for a in self.active[stage] if self.data.placement(stage, a) == "whole" and (a.kind == "verdict" or self.verdicts)]
-			table = self.colours.assign(stage, placed)
+			table = band_tables[stage]
 			codes = {c: "{}{}".format(BAND_CODES[stage], i + 1) for i, c in enumerate(table)}
 			svg, per_row, drawn = layers.draw_bands(L, stage, placed, table, codes, self.spec.value("band_opacity"))
 			body.append(svg)
@@ -114,6 +115,16 @@ class Figure:
 				fills[a.subject] = table[a.category]
 				numbers[a.subject] = a.label
 		return fills, numbers
+
+	def _band_tables(self) -> dict[str, dict[str, str]]:
+		tables, offset = {}, 0
+		for stage in BAND_ORDER:
+			if stage not in self.data.annotations:
+				continue
+			placed = [a for a in self.data.annotations[stage] if self.data.placement(stage, a) == "coordinates"]
+			tables[stage] = self.colours.assign(stage, placed, offset)
+			offset += sum(1 for category in tables[stage] if "/" not in category)
+		return tables
 
 	def _band_label(self, stage: str, category: str) -> str:
 		labels = {a.label for a in self.active[stage] if a.category == category}

@@ -106,7 +106,7 @@ class Colours:
 		self.numbering = numbering
 		self.assigned: dict[str, dict[str, str]] = {}
 
-	def assign(self, stage: str, annotations: list[Annotation]) -> dict[str, str]:
+	def assign(self, stage: str, annotations: list[Annotation], offset: int = 0) -> dict[str, str]:
 		categories, counts = [], {}
 		for a in annotations:
 			if a.category not in counts:
@@ -123,7 +123,7 @@ class Colours:
 			if parent not in parents:
 				parents.append(parent)
 		chooser = palettes.monochrome if (self.monochrome and stage.startswith("cluster")) else self.palette
-		colours = chooser(len(parents))
+		colours = chooser(offset + len(parents))[offset:]
 		table = {c: self.overrides.get((stage, c), colours[i]) for i, c in enumerate(parents)}
 		for c in children:
 			parent, letter = c.split("/", 1)

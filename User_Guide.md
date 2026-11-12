@@ -506,7 +506,10 @@ outline, pseudogenes a blue one.
 | `classic` | the original FlaGs look; add a row with `tree` set to `1` for a classic tree figure |
 
 A figure is drawn only when a stage it shows produced something. Every
-figure has a legend panel per layer; a domain panel can be long.
+figure has a legend panel per layer; a domain panel can be long. Systems are
+coloured from one sequence that runs through all kinds, so `S1`, `M1` and
+`D1` never share a colour, and a system keeps its colour in every figure of
+the run.
 
 Three or four files sit beside the figures: `legend.tsv` (every domain and
 band code with its name), `protein_clusters_legend.txt` and, with `-cr`,

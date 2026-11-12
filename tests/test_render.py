@@ -73,6 +73,29 @@ def test_colours_and_overrides(tmp_path):
 	assert read_overrides(path) == {("cluster", "family:1"): "#ff0000"}
 
 
+def _legend_colour(svg, code):
+	legend = svg[svg.index('id="layer-legend"'):]
+	before = legend[:legend.index(">{}. ".format(code))]
+	return re.findall(r'stroke="(#[0-9a-f]{6})"', before)[-1]
+
+
+def test_system_colours_continue_across_kinds(tmp_path):
+	run, _ = _run(tmp_path)
+	_fake_stage(run, "sismis", [Annotation("GCF_TEST|A", "bp", 1000, 3000, "band", "T3SS", "T3SS", "sismis", 0.9)])
+	_fake_stage(run, "genomad", [Annotation("GCF_TEST|A", "bp", 1500, 2500, "band", "provirus", "provirus", "genomad", None),
+		Annotation("GCF_TEST|A", "bp", 3500, 4500, "band", "plasmid", "plasmid", "genomad", None)])
+	_fake_stage(run, "defence", [Annotation("GCF_TEST|A", "bp", 2000, 2600, "band", "RM", "RM", "padloc", None)])
+	data = RunData.load(run)
+	everything = Figure(data, FigureSpec("all", ["cluster", "sismis", "genomad", "defence"]), Colours("bright")).render()
+	colours = [_legend_colour(everything, code) for code in ("S1", "M1", "M2", "D1")]
+	assert colours == palettes.bright(4)
+	alone = Figure(data, FigureSpec("d", ["cluster", "defence"]), Colours("bright")).render()
+	assert _legend_colour(alone, "D1") == palettes.bright(4)[3]
+	table = Colours("bright").assign("defence", [Annotation("x", "bp", 1, 2, "band", "RM", "RM", "t", None)], offset=3)
+	assert table == {"RM": palettes.bright(4)[3]}
+
+
+
 def test_layout_flips_minus_strand_query(tmp_path):
 	run, _ = _run(tmp_path)
 	data = RunData.load(run)

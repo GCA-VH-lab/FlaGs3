@@ -614,6 +614,16 @@ get hues far apart, and after seven entries the value drops so the second
 lap is told from the first; `colours.tsv` in the run directory (`stage, category,
 colour`) overrides single entries, opt-in.
 
+The band stages share one colour sequence. `Figure._band_tables` walks
+`BAND_ORDER` over every band stage the run has — not only the ones the
+figure draws — and gives each stage's categories the palette entries after
+those the earlier stages took (`Colours.assign(stage, annotations,
+offset)`). Restarting the palette per stage made `S1`, `M1` and `D1` the
+same red, which reads as "the same thing" on a figure that shows them side
+by side. Because the walk covers the whole run and not the figure, a system
+has one colour in `defence.svg`, `genomad.svg` and `all-in-one.svg` alike.
+Family and domain colours are separate sequences as before.
+
 Family numbers come from the cluster layer's labels and are placed above
 the arrows in versatile mode, inside them in classic mode; on a figure that
 also draws domains, plain numbers get a `G` prefix so they don't collide

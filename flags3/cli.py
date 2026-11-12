@@ -37,7 +37,7 @@ RUN_OPTIONS = (
 	(("-n", "--iterations"), dict(type=int, help="jackhmmer/nhmmer iterations for this run, overriding the tools table")),
 	(("-ce", "--cluster_evalue"), dict(type=float, help="Inclusion E-value for clustering hits, overriding the tools table (jackhmmer, nhmmer, mmseqs)")),
 	(("-sc", "--subfamily_coverage"), dict(type=float, metavar="FRACTION", help="Split a family into subfamilies of full-length homologues: an edge counts when the alignment covers this fraction of both sequences. Default from the tools table (0.6); 0 switches it off")),
-	(("-cr", "--cluster_rna"), dict(action="store_true", help="Cluster flanking RNA genes too, with the rna_method row (nhmmer); RNAs without a sequence are grouped by product name")),
+	(("-cr", "--cluster_rna"), dict(action="store_true", help="Cluster flanking non-coding RNA too, with the rna_method row (nhmmer); RNAs without a sequence are grouped by product name")),
 	(("--rna_method",), dict(default="nhmmer", metavar="NAME", help="Row of the tools table used for RNA clustering. Default = nhmmer")),
 	(("-t", "--tree"), dict(action="store_true", help="Build a phylogenetic tree of the query proteins (mafft, trimal, VeryFastTree)")),
 	(("-iq", "--iqtree"), dict(action="store_true", help="Build the tree with IQ-TREE (ModelFinder, 1000 ultrafast bootstraps) instead of VeryFastTree; implies --tree")),

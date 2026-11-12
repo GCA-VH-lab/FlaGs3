@@ -189,7 +189,7 @@ class Figure:
 		if any(q for q, _, _ in present):
 			genes.append(("", "Query protein", "outline"))
 		if any(r for _, r, _ in present):
-			genes.append(("", "RNA gene", "rna"))
+			genes.append(("", "Non-coding RNA", "rna"))
 		if any(p for _, _, p in present):
 			genes.append(("", "Pseudogene", "pseudo"))
 		if features:

@@ -112,6 +112,12 @@ def test_figure_layers_and_legend(tmp_path):
 	assert svg.count("<svg") == 1 and svg.strip().endswith("</svg>")
 
 
+def test_key_says_non_coding_rna(tmp_path):
+	run, _ = _run(tmp_path)
+	svg = Figure(RunData.load(run), FigureSpec("n", ["cluster"]), Colours("bright")).render()
+	assert ">Non-coding RNA<" in svg and "RNA gene" not in svg
+
+
 def test_classic_and_parts(tmp_path):
 	run, _ = _run(tmp_path)
 	data = RunData.load(run)

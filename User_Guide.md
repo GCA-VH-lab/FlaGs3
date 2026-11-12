@@ -277,7 +277,7 @@ line as each stage starts and finishes, more with `-vb`.
 -cm jackhmmer   the method: a row of the tools table (default jackhmmer;
                 mmseqs_cluster or mmseqs_cluster_exhaustive after
                 flags3 install mmseqs)
--cr             cluster flanking RNA genes too (nhmmer; RNAs without a
+-cr             cluster flanking non-coding RNA too (nhmmer; RNAs without a
                 sequence are grouped by product name)
 ```
 
@@ -369,7 +369,7 @@ myrun/
     extract/          genes.tsv, windows.tsv, rows.tsv, unmatched.tsv, range_report.tsv,
                       proteins.faa, queries.faa, rna.fna
     cluster/          families.tsv, hits.tsv, annotations.tsv
-    cluster_rna/      the same for RNA genes
+    cluster_rna/      the same for non-coding RNA
     tree/             tree.nwk, alignment.aln, trimmed.aln, leaves.tsv, commands.txt
     domains/          domains.tsv, annotations.tsv
     features/         features.tsv, annotations.tsv
@@ -493,7 +493,7 @@ tool's own columns.
 Each row is one query in one genome. The query is drawn pointing right,
 with a black outline; the row is mirrored when the query is on the minus
 strand. Genes are coloured by family and labelled with the family label
-above them; grey genes belong to no shared family. RNA genes have a green
+above them; grey genes belong to no shared family. Non-coding RNA has a green
 outline, pseudogenes a blue one.
 
 | figure | what it shows |

@@ -57,7 +57,7 @@ Common additions:
 ```
 -g 6            six flanking genes each side (default 4)
 -r 5000         or every gene within 5 kb of the query
--cr             cluster RNA genes too
+-cr             cluster non-coding RNA too
 -t              tree of the queries, -to to order the rows by it
 -d              Pfam domains on the flanking proteins
 -ss -gn -df     secretion systems, mobile elements, defence systems

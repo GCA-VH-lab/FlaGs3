@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.6.0
+
+- Systems are coloured from one sequence across all kinds: secretion
+  systems, mobile elements, defence systems and plasmid replicons no longer
+  each start at the same first colour (`M1` and `D1` were both red), and a
+  system has the same colour in every figure of a run.
+- `-pcl/--protein_clusters_legend` adds a "Protein clusters" legend panel to
+  the neighbors and all-in-one figures: one line per subfamily with its
+  product names, deduplicated, the most common first. Off by default.
+- The NCBI API key can be given in the `NCBI_API_KEY` environment variable
+  instead of `-api`; it is then written to none of the run's files and does
+  not show in the process list.
+- "Non-coding RNA" replaces "RNA gene(s)" in the figure key, the help and
+  the guide.
+- `examples/input.txt` is the SecB example used by the web service.
+
 ## 3.5.0
 
 - `flags3 cache [DIR]` reports the genome cache (genomes, size, age of last

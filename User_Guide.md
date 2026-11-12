@@ -353,6 +353,8 @@ Subfamilies are drawn as lighter shades of the family colour and listed in
 -nf             no figures; draw later with flags3 figures
 -fh 16383       split a figure into parts above this height in pixels
 -no             classic style: leave the number out of a gene too small for it
+-pcl            a "Protein clusters" legend panel in the neighbors and
+                all-in-one figures: one line per subfamily with its product names
 -pdf            a PDF beside every SVG; a figure split into SVG parts is one PDF
 -c 8            worker threads (default: all cores)
 --tools FILE    a tool table other than ~/.flags3/tools_table.tsv
@@ -518,6 +520,16 @@ figure has a legend panel per layer; a domain panel can be long. Systems are
 coloured from one sequence that runs through all kinds, so `S1`, `M1` and
 `D1` never share a colour, and a system keeps its colour in every figure of
 the run.
+
+`-pcl` adds a "Protein clusters" panel to the figures that print family
+labels above the genes (`neighbors` and `all-in-one`; not `classic`, `tree`
+or the figures without labels). It has one line per subfamily, keyed by the
+label drawn in the figure and in the cluster's colour: `Q1a. protein-export
+chaperone SecB / chaperone / hypothetical protein` — the product names of
+that subfamily's genes in the figure, each once, the most common first. The
+query's family comes first, then the others by number. A subfamily with many
+differently named members makes a long line, and the figure is widened to
+hold it.
 
 Three or four files sit beside the figures: `legend.tsv` (every domain and
 band code with its name), `protein_clusters_legend.txt` and, with `-cr`,

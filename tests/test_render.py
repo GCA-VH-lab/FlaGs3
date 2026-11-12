@@ -291,3 +291,73 @@ def test_whole_sequence_verdicts_are_separated(tmp_path):
 	assert runner.execute(Figures())
 	svg = run.stage_file("figures", run.stamped("genomad.svg")).read_text()
 	assert ">plasmid<" in svg and ">W1<" not in svg
+
+
+def _families(run):
+	fill = lambda acc, category, label: Annotation(acc, "-", None, None, "fill", category, label, "jackhmmer", None)
+	_fake_stage(run, "cluster", [fill("WP_004", "family:1", "Q1"), fill("WP_009", "family:1", "Q1"), fill("WP_001", "family:1", "Q1"),
+		fill("WP_005", "family:2", "1"), fill("WP_008", "family:2", "1"),
+		fill("WP_006", "family:3/b", "2b"), fill("WP_002", "family:3/a", "2a")])
+
+
+def _entries(svg, upto=None):
+	legend = svg[svg.index(">Protein clusters<"):]
+	if upto:
+		legend = legend[:legend.index(upto)]
+	return re.findall(r">([QG]?\d+[a-z]*)\. ([^<]+)<", legend)
+
+
+def test_protein_clusters_legend_is_opt_in(tmp_path):
+	run, _ = _run(tmp_path)
+	_families(run)
+	_fake_stage(run, "domains", [Annotation("WP_004", "aa", 10, 100, "wedge", "PF1", "Dom_1", "pfam", 1e-5)])
+	data = RunData.load(run)
+	neighbors = FigureSpec("n", ["cluster"], numbers=True)
+	assert "Protein clusters" not in Figure(data, neighbors, Colours("bright")).render()
+	svg = Figure(data, neighbors, Colours("bright"), clusters_legend=True).render()
+	assert _entries(svg, ">Genes<") == [("Q1", "protein nine / protein one / query protein"), ("1", "protein eight / protein five"),
+		("2a", "protein two"), ("2b", "protein six")]
+	for spec in (FigureSpec("c", ["cluster"], mode="classic", palette="classic"), FigureSpec("d", ["cluster", "domains"], numbers=False)):
+		assert "Protein clusters" not in Figure(data, spec, Colours(spec.palette), clusters_legend=True).render()
+	both = Figure(data, FigureSpec("a", ["cluster", "domains"], numbers=True), Colours("bright"), clusters_legend=True).render()
+	assert [code for code, _ in _entries(both, ">Domains<")] == ["Q1", "G1", "G2a", "G2b"]
+	assert both.index(">Protein clusters<") < both.index(">Domains<")
+	part = Figure(data, neighbors, Colours("bright"), rows=["WP_009|GCF_TEST"], clusters_legend=True).render()
+	assert _entries(part, ">Genes<") == [("Q1", "protein nine"), ("1", "protein eight")]
+
+
+def test_cluster_legend_products_by_prevalence_and_width(tmp_path):
+	run, _ = _run(tmp_path)
+	_families(run)
+	data = RunData.load(run)
+	rename = {"WP_004": "SecB", "WP_009": "SecB", "WP_001": "chaperone", "WP_005": "-", "WP_008": "-"}
+	for genes in data.genes.values():
+		for i, g in enumerate(genes):
+			if g.accession in rename:
+				genes[i] = type(g)(**{**g.__dict__, "product": rename[g.accession]})
+	figure = Figure(data, FigureSpec("n", ["cluster"], numbers=True), Colours("bright"), clusters_legend=True)
+	svg = figure.render()
+	assert _entries(svg, ">Genes<")[:2] == [("Q1", "SecB / chaperone"), ("1", "no product annotation")]
+	assert int(re.search(r'<svg[^>]*width="(\d+)"', svg).group(1)) == figure.layout.width
+	for genes in data.genes.values():
+		for i, g in enumerate(genes):
+			if g.accession == "WP_004":
+				genes[i] = type(g)(**{**g.__dict__, "product": "x" * 600})
+	wide = Figure(data, FigureSpec("n", ["cluster"], numbers=True), Colours("bright"), clusters_legend=True)
+	svg = wide.render()
+	width = int(re.search(r'<svg[^>]*width="(\d+)"', svg).group(1))
+	assert width > wide.layout.width and 'rect width="{}"'.format(width) in svg
+
+
+def test_figures_stage_passes_the_legend_flag(tmp_path):
+	run, runner = _run(tmp_path)
+	_families(run)
+	cfg = run.config()
+	cfg.set("no_timestamp", True)
+	cfg.set("protein_clusters_legend", True)
+	cfg.save()
+	runner.config = cfg
+	assert runner.execute(Figures())
+	figures = run.stage_dir("figures")
+	assert "Protein clusters" in (figures / "neighbors.svg").read_text()
+	assert "Protein clusters" not in (figures / "classic.svg").read_text()

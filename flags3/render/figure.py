@@ -1,4 +1,5 @@
 import math
+import re
 from io import StringIO
 from typing import Optional
 
@@ -6,18 +7,23 @@ from flags3.render import layers, palettes, text
 from flags3.render.data import RunData
 from flags3.render.layout import Layout
 from flags3.render.style import BAND_CODES, BAND_ORDER, STAGE_TITLES, Colours, FigureSpec
+from flags3.schema import MISSING
 
 CLUSTER_STAGES = ("cluster", "cluster_rna")
+PRODUCT_SEPARATOR = " / "
+NO_PRODUCT = "no product annotation"
+FAMILY_LABEL = re.compile(r"^([A-Za-z]*)(\d+)(.*)$")
 
 
 class Figure:
 	def __init__(self, data: RunData, spec: FigureSpec, colours: Colours, rows: Optional[list[str]] = None,
-			no_overlaps: bool = False, verdicts: bool = False):
+			no_overlaps: bool = False, verdicts: bool = False, clusters_legend: bool = False):
 		self.data = data
 		self.spec = spec
 		self.colours = colours
 		self.no_overlaps = no_overlaps
 		self.verdicts = verdicts
+		self.clusters_legend = clusters_legend and spec.numbers and not spec.classic
 		self.active = {s: a for s, a in data.annotations.items() if spec.wants(s)}
 		order = data.tree_order if (spec.tree and data.tree_order) else data.order
 		self.rows = [r for r in (rows or order) if r in data.genes]
@@ -38,6 +44,10 @@ class Figure:
 			if s:
 				overlaid |= {a.subject for a in self.active[s]}
 		style = layers.GeneStyle(L, fills, overlaid, self.spec.classic)
+		if self.clusters_legend and "cluster" in self.active:
+			entries = self._cluster_entries(fills, domain_stage is not None)
+			if entries:
+				self.legend_panels.append((STAGE_TITLES["cluster"], entries, None))
 		body = [L.clip_defs()]
 		side: dict[str, list] = {}
 		band_tables = self._band_tables()
@@ -99,10 +109,11 @@ class Figure:
 		tree_svg, scale_h = self._tree()
 		if tree_svg:
 			body.insert(1, tree_svg)
-		legend_svg, legend_h = self._legend(L.rows_height + 14 + scale_h, L.width, feature_stage is not None)
+		legend_svg, legend_h, legend_w = self._legend(L.rows_height + 14 + scale_h, L.width, feature_stage is not None)
 		height = int(L.rows_height + scale_h + legend_h + L.pad)
+		width = max(L.width, int(legend_w))
 		head = ['<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" font-family="{}" font-size="{}">'.format(
-			L.width, height, text.FONT_FAMILY, L.font), '<rect width="{}" height="{}" fill="white"/>'.format(L.width, height)]
+			width, height, text.FONT_FAMILY, L.font), '<rect width="{}" height="{}" fill="white"/>'.format(width, height)]
 		return "\n".join(head + body + [legend_svg, "</svg>"])
 
 	def _families(self) -> tuple[dict[str, str], dict[str, str]]:
@@ -136,6 +147,33 @@ class Figure:
 			if a.category == category and a.label not in labels:
 				labels.append(a.label)
 		return category if category in labels or len(labels) > 3 else "{} ({})".format(category, ", ".join(labels))
+
+	def _cluster_entries(self, fills: dict[str, str], prefixed: bool) -> list[tuple[str, str, str]]:
+		label_of = {a.subject: a.label for a in self.active["cluster"]}
+		products: dict[str, dict[str, int]] = {}
+		colour: dict[str, str] = {}
+		for row in self.rows:
+			for gene in self.layout.genes_in(row):
+				label = label_of.get(gene.accession)
+				if label is None:
+					continue
+				counts = products.setdefault(label, {})
+				colour.setdefault(label, fills.get(gene.accession, palettes.GREY))
+				if gene.product != MISSING and gene.product.strip():
+					counts[gene.product.strip()] = counts.get(gene.product.strip(), 0) + 1
+
+		def order(label: str):
+			match = FAMILY_LABEL.match(label)
+			if not match:
+				return (2, 0, label)
+			return (0 if match.group(1).upper().startswith("Q") else 1, int(match.group(2)), match.group(3))
+
+		entries = []
+		for label in sorted(products, key=order):
+			names = sorted(products[label], key=lambda name: (-products[label][name], name))
+			code = "G" + label if (prefixed and label[:1].isdigit()) else label
+			entries.append((code, PRODUCT_SEPARATOR.join(names) or NO_PRODUCT, colour[label]))
+		return entries
 
 	def _tree(self) -> tuple[str, float]:
 		L = self.layout
@@ -192,7 +230,7 @@ class Figure:
 		seg.append(text.text(x0 + w / 2, y + L.font + 2, "{:g}".format(nice), L.font - 1, "middle"))
 		return '<g id="layer-tree">{}</g>'.format("".join(seg)), 34
 
-	def _legend(self, y: float, width: float, features: bool) -> tuple[str, float]:
+	def _legend(self, y: float, width: float, features: bool) -> tuple[str, float, float]:
 		L = self.layout
 		panels = list(self.legend_panels)
 		genes = []
@@ -209,10 +247,11 @@ class Figure:
 				genes.append(("", "Transmembrane region", "hatch"))
 			if "triangle" in kinds:
 				genes.append(("", "Signal peptide", "triangle"))
-		parts, top = [], y
+		parts, top, needed = [], y, 0.0
 		for title, items, hatch in panels:
 			longest = max((text.width("{}. {}".format(code, label), L.font) for code, label, _ in items), default=0)
 			col_w = int(longest) + 26
+			needed = max(needed, col_w + 2 * L.pad)
 			cols = max(1, min(len(items), (width - 2 * L.pad) // col_w))
 			rows_n = -(-len(items) // cols)
 			parts.append(text.text(L.pad, y, title, weight="bold"))
@@ -234,7 +273,7 @@ class Figure:
 				parts.append(text.text(ex + 20, ey, label))
 				ex += int(text.width(label, L.font)) + 46
 			y += 36
-		return '<g id="layer-legend">{}</g>'.format("".join(parts)), y - top
+		return '<g id="layer-legend">{}</g>'.format("".join(parts)), y - top, needed
 
 	@staticmethod
 	def _mark(x, y, shape) -> str:
@@ -249,8 +288,8 @@ class Figure:
 
 
 def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int, no_overlaps: bool = False,
-		verdicts: bool = False) -> list[Figure]:
-	whole = Figure(data, spec, colours, no_overlaps=no_overlaps, verdicts=verdicts)
+		verdicts: bool = False, clusters_legend: bool = False) -> list[Figure]:
+	whole = Figure(data, spec, colours, no_overlaps=no_overlaps, verdicts=verdicts, clusters_legend=clusters_legend)
 	if not whole.rows:
 		return []
 	if whole.layout.tree_w or len(whole.rows) < 2:
@@ -261,5 +300,5 @@ def parts_for(data: RunData, spec: FigureSpec, colours: Colours, max_height: int
 		return [whole]
 	rows = whole.rows
 	return [Figure(data, spec, Colours(spec.palette, colours.overrides, spec.monochrome, spec.numbering), rows[i:i + capacity],
-		no_overlaps, verdicts)
+		no_overlaps, verdicts, clusters_legend)
 		for i in range(0, len(rows), capacity)]

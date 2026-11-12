@@ -638,6 +638,26 @@ also draws domains, plain numbers get a `G` prefix so they don't collide
 with the domain codes. Domains are numbered per category and listed in the
 Domains legend panel; bands carry `S1`, `M1`, `D1` codes with their panels.
 
+`-pcl/--protein_clusters_legend` adds a "Protein clusters" legend panel,
+drawn first, to a figure that is in versatile mode and prints family
+labels (`numbers` true) — the shipped `neighbors` and `all-in-one`. The
+rule is the one that makes the panel readable at all: its entries are keyed
+by the label printed above the genes, so a figure that prints no labels, or
+prints them inside the arrows as classic mode does, has nothing to key on.
+`Figure._cluster_entries` groups the figure's own genes by label (a
+subfamily is whatever label the cluster stage gave, `2a` and `2b` apart),
+counts each product name once per gene drawn, and joins the names by
+falling count, ties by name; a label whose genes carry no product says so.
+Entries are ordered by label — query family, then by number and subfamily
+letter — not by the colour table, whose occurrence order would scatter
+them. On a figure that also draws domains the plain numbers take the same
+`G` prefix they have above the genes. A part of a split figure lists only
+the families in its rows. Legend panels are laid out in columns as wide as
+their longest entry; when one entry is wider than the figure, `_legend`
+reports the width it needs and `render` widens the SVG, so a long product
+line is not cut off at the page edge. The flag is off by default: the
+`protein_clusters_legend.txt` companion already holds this and more.
+
 Beside the figures, `figures/` gets companion files written by the same
 stage from the same data: `legend.tsv` (stage, code, name, occurrences —
 every domain and band code used across the run's figures),

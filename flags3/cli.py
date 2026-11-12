@@ -70,6 +70,7 @@ RUN_OPTIONS = (
 	(("-no", "--no_overlaps"), dict(action="store_true", help="Classic mode: leave the family number out of a gene too small to hold it")),
 	(("-dg", "--digest"), dict(action="store_true", help="Also write report/digest.md, the whole run as one compact document: families, systems, conserved positions, their exceptions and every neighbourhood. Readable on its own, and sized to paste into an AI assistant")),
 	(("-cv", "--contig_verdicts"), dict(action="store_true", help="Also show geNomad's whole-sequence classifications (a contig called plasmid or viral, no coordinates of its own) as a black W code beside the row. Meaningful only when geNomad scanned whole contigs")),
+	(("-pcl", "--protein_clusters_legend"), dict(action="store_true", help="Add a protein-clusters legend to the figures that print family labels in versatile mode (neighbors, all-in-one): one line per subfamily with its product names, the most common first")),
 	(("-pdf", "--pdf"), dict(action="store_true", help="Also write a PDF beside every figure")),
 	(("-c", "--cpu"), dict(type=int, help="Parallel workers (default: auto)")),
 	(("--tools",), dict(metavar="TSV", help="Tool table overriding the shipped defaults. Default: ~/.flags3/tools_table.tsv if present")),

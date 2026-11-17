@@ -528,10 +528,12 @@ outline, pseudogenes a blue one.
 | `tree` | the neighbourhoods aligned to the tree of the queries, bootstrap values in red, in the classic look |
 | `domains` | domain wedges inside the genes, numbered; TM regions as red hatching, signal peptides as a black triangle; family numbers prefixed `G` so they don't clash with domain numbers |
 | `sismis`, `genomad`, `defence` | genes in grey, the called systems as coloured bands under the row with codes `S1`, `M1`, `D1` |
-| `all-in-one` | everything, one band lane per tool |
+| `all-in-one` | everything, one band lane per tool; on the tree when the run has one, in input order without it |
 | `classic` | the original FlaGs look; add a row with `tree` set to `1` for a classic tree figure |
 
-A figure is drawn only when a stage it shows produced something. Every
+A figure is drawn only when a stage it shows produced something, and a
+figure whose `tree` column is `1` only when the run built a tree; `optional`
+there, as `all-in-one` has, draws the figure either way. Every
 figure has a legend panel per layer; a domain panel can be long. Systems are
 coloured from one sequence that runs through all kinds, so `S1`, `M1` and
 `D1` never share a colour, and a system keeps its colour in every figure of

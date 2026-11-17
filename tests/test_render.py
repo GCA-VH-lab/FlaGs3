@@ -361,3 +361,24 @@ def test_figures_stage_passes_the_legend_flag(tmp_path):
 	figures = run.stage_dir("figures")
 	assert "Protein clusters" in (figures / "neighbors.svg").read_text()
 	assert "Protein clusters" not in (figures / "classic.svg").read_text()
+
+
+def test_all_in_one_is_drawn_without_a_tree(tmp_path):
+	run, runner = _run(tmp_path)
+	_fake_stage(run, "defence", [Annotation("GCF_TEST|A", "bp", 2000, 2600, "band", "RM", "RM", "padloc", None)])
+	cfg = run.config()
+	cfg.set("no_timestamp", True)
+	cfg.save()
+	runner.config = cfg
+	assert runner.execute(Figures())
+	figures = run.stage_dir("figures")
+	names = sorted(p.name for p in figures.glob("*.svg"))
+	assert "all-in-one.svg" in names and "tree.svg" not in names
+	svg = (figures / "all-in-one.svg").read_text()
+	assert 'id="layer-tree"' not in svg and ">D1. RM<" in svg
+	data = RunData.load(run)
+	spec = next(s for s in read_table(None) if s.name == "all-in-one")
+	assert spec.tree and spec.tree_optional
+	assert Figure(data, spec, Colours(spec.palette)).rows == data.order
+	required = next(s for s in read_table(None) if s.name == "tree")
+	assert required.tree and not required.tree_optional

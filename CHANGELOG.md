@@ -6,6 +6,9 @@
   everything below them, out of a local BlastP search (`-bm local`);
   `-bx 2759` searches a full `refseq_protein` without its eukaryotes. The
   guide now says how to install a local database.
+- The `all-in-one` figure is drawn without a tree when the run built none;
+  it used to be skipped. A figure table can ask for the same with
+  `optional` in its `tree` column.
 
 ## 3.6.0
 

@@ -37,7 +37,7 @@ class Figures(Stage):
 			if extra and not any(s in data.annotations for s in extra):
 				note("{}: skipped, no {} annotations".format(spec.name, " or ".join(extra)))
 				continue
-			if spec.tree and not data.newick:
+			if spec.tree and not data.newick and not spec.tree_optional:
 				note("{}: skipped, no tree".format(spec.name))
 				continue
 			colours = Colours(spec.palette, overrides, spec.monochrome, spec.numbering)

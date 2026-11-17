@@ -26,6 +26,7 @@ CLASSIC_GEOMETRY = {"font_size": 12, "row_height": 20, "gene_height": 15, "bases
 class StyleError(ValueError):
 	pass
 
+TREE_OPTIONAL = "optional"
 
 @dataclass
 class FigureSpec:
@@ -38,6 +39,7 @@ class FigureSpec:
 	monochrome: bool = False
 	numbering: str = "occurrence"
 	geometry: dict = field(default_factory=dict)
+	tree_optional: bool = False
 
 	@property
 	def classic(self) -> bool:
@@ -80,8 +82,9 @@ def parse_row(row: dict[str, str], origin: str) -> FigureSpec:
 	numbering = (row.get("numbering") or "occurrence").strip().lower()
 	if numbering not in ("occurrence", "appearance"):
 		raise StyleError("{}: figure {} has numbering {!r}; occurrence or appearance".format(origin, name, numbering))
-	return FigureSpec(name, layers, mode, _bool(row.get("tree", "")), _bool(row.get("numbers", "true")), palette,
-		_bool(row.get("monochrome", "")), numbering, geometry)
+	tree = (row.get("tree") or "").strip().lower()
+	return FigureSpec(name, layers, mode, tree == TREE_OPTIONAL or _bool(tree), _bool(row.get("numbers", "true")), palette,
+		_bool(row.get("monochrome", "")), numbering, geometry, tree == TREE_OPTIONAL)
 
 
 def read_table(path: Optional[Path]) -> list[FigureSpec]:

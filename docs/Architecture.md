@@ -611,7 +611,15 @@ narrow.
 to draw), `mode` (versatile or classic), `tree`, `numbers`, `palette`
 (bright, pastel, classic, colourblind, monochrome), `monochrome` (grey gene
 fills only, so bands stand out), and geometry columns that fall back to the
-mode's defaults. A figure is drawn when any of its non-cluster layers has
+mode's defaults. `tree` is `0`, `1` or `optional`: `1` makes the tree part
+of what the figure is, so a run without one skips it (`tree` without its
+tree would be `classic` again); `optional` draws the tree when there is one
+and the same figure in input order when there is not. `all-in-one` is
+`optional`, because it is the one figure that holds everything a run asked
+for, and a run that asked for no tree asked for the rest all the same.
+Nothing else changes for it without a tree: `Layout` already gives the
+tree no width when the run has no Newick, and such a figure is split into
+parts like any other. A figure is drawn when any of its non-cluster layers has
 data; a legend panel lists only the categories that figure (or part)
 actually drew. `Colours` assigns each stage's categories — and so the codes `1, 2, …`,
 `S1, S2, …` — in order of occurrence count by default (`numbering =

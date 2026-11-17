@@ -43,7 +43,7 @@ RUN_OPTIONS = (
 	(("-t", "--tree"), dict(action="store_true", help="Build a phylogenetic tree of the query proteins (mafft, trimal, VeryFastTree)")),
 	(("-iq", "--iqtree"), dict(action="store_true", help="Build the tree with IQ-TREE (ModelFinder, 1000 ultrafast bootstraps) instead of VeryFastTree; implies --tree")),
 	(("-to", "--tree_order"), dict(action="store_true", help="Order rows in figures and tables by tree leaf order; implies --tree")),
-	(("-sy", "--synteny"), dict(action="store_true", help="Compare the neighbourhood DNA of each row with the next row in tree order by blastn and draw the shared blocks as ribbons between the rows of the all-in-one figure; implies --tree_order")),
+	(("-ns", "--nucleotide_similarity", "-sy", "--synteny"), dict(dest="synteny", action="store_true", help="Nucleotide similarity graph: compare the neighbourhood DNA of each row with the next row in tree order by blastn and draw the similar blocks as ribbons between the rows of the all-in-one figure; implies --tree_order. -sy/--synteny is the older name of the same option")),
 	(("-tm", "--trimal_mode"), dict(default="gt", help="trimal column filter: gt, cons, st, or a preset such as gappyout, strict, automated1. Default = gt")),
 	(("-tv", "--trimal_value"), dict(type=float, default=0.1, help="Value for a trimal mode that takes one. Default = 0.1")),
 	(("-tx", "--trimal_extra"), dict(default="", help="Extra trimal arguments, verbatim")),

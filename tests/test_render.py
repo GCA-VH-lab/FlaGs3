@@ -413,7 +413,7 @@ def test_synteny_ribbons_join_neighbouring_rows_of_all_in_one(tmp_path):
 	assert len(fills) == 2
 	assert {f for _, f in fills} == {SYNTENY_SHADES[1][1], layers.synteny_shade(70.0, SYNTENY_SHADES)}
 	assert svg.index('id="layer-synteny"') < svg.index('id="layer-genes"')
-	assert ">Synteny<" in svg and "100% nucleotide identity" in svg
+	assert ">Nucleotide similarity<" in svg and "100% nucleotide identity" in svg
 	L = figure.layout
 	plus = [tuple(map(float, p.split(","))) for p in next(p for p, f in fills if f == SYNTENY_SHADES[1][1]).split()]
 	assert [y for _, y in plus] == [L.y(top), L.y(top), L.y(middle), L.y(middle)]

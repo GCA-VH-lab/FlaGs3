@@ -1097,3 +1097,16 @@ install core --update` rewrites it. `-max_target_seqs` is per query in BLAST,
 so `-bh` means the same in both paths. The stage fetches every query sequence
 first, then searches; `RemoteBlast` has `batched = False` and keeps one NCBI
 job per protein, each with its own job id to follow.
+
+### Synteny is shown as the nucleotide similarity graph
+
+From 3.10.0 the feature is named for what it measures, pairwise nucleotide
+similarity, since synteny proper is about gene order. Only what a user reads
+changed: the option (`-ns/--nucleotide_similarity`, with `-sy/--synteny` as
+further option strings of the same argparse entry, `dest="synteny"`; the old
+long name is written last because the config key is taken from the last
+option string), its
+help, the legend title in `STAGE_TITLES` and the documents. The config key,
+the stage name, the run folder, the layer name in the figure table and the
+tools-table row are all still `synteny`, so runs made by 3.8.0 and 3.9.0,
+figure tables written for them and installed tools tables need no change.

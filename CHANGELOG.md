@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.10.0
+
+- Synteny is now called the nucleotide similarity graph, which is what it
+  shows: the option is `-ns/--nucleotide_similarity` and the figure key is
+  titled "Nucleotide similarity". `-sy/--synteny` still works as the older
+  name of the same option, and nothing else moved: the stage, the
+  `synteny/` folder of the run and the `synteny` row of the tools table
+  keep their names.
+
 ## 3.9.0
 
 - A local BlastP search (`-bm local`) wrote its hits without the accession

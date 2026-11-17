@@ -11,7 +11,7 @@ TABLE_NAME = "visualisation_table.tsv"
 STAGE_TITLES = {
 	"cluster": "Protein clusters", "cluster_rna": "RNA clusters", "domains": "Domains",
 	"features": "Protein features", "sismis": "Secretion systems", "genomad": "Mobile elements",
-	"defence": "Defence systems", "plasmidfinder": "Plasmid replicons", "synteny": "Synteny",
+	"defence": "Defence systems", "plasmidfinder": "Plasmid replicons", "synteny": "Nucleotide similarity",
 }
 BAND_CODES = {"sismis": "S", "genomad": "M", "defence": "D", "plasmidfinder": "P"}
 BAND_ORDER = ("sismis", "genomad", "defence", "plasmidfinder")

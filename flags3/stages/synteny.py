@@ -88,7 +88,7 @@ class Synteny(Stage):
 		links = [link for pair in pairs for link in pair.links(identity, length)]
 		Link.write(out / Link.FILE, links)
 		skipped = len(order) - 1 - len(pairs)
-		note("{} synteny blocks between {} pairs{}".format(len(links), len(pairs),
+		note("{} similar DNA blocks between {} pairs{}".format(len(links), len(pairs),
 			", {} pairs without a genome sequence".format(skipped) if skipped > 0 else ""))
 
 	def _cut(self, run, windows: list[Window], raw: Path) -> dict[str, Path]:

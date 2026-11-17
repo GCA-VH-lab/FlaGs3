@@ -4,7 +4,7 @@ import shutil
 import pytest
 
 from flags3 import fasta
-from flags3.cli import build_parser, _imply
+from flags3.cli import RUN_OPTIONS, build_parser, _imply
 from flags3.run import RunDir
 from flags3.schema import GenomeFiles, Window
 from flags3.stage import Runner
@@ -51,9 +51,13 @@ def _window(row: str, assembly: str, lo: int, hi: int, length: int) -> Window:
 
 
 def test_flag_implies_tree_order_and_stage_order():
-	args = build_parser().parse_args(["run", "-i", "x", "-sy"])
-	_imply(args)
-	assert args.synteny and args.tree_order and args.tree
+	for option in ("-ns", "--nucleotide_similarity", "-sy", "--synteny"):
+		args = build_parser().parse_args(["run", "-i", "x", option])
+		_imply(args)
+		assert args.synteny and args.tree_order and args.tree
+	assert not build_parser().parse_args(["run", "-i", "x"]).synteny
+	flags = next(flags for flags, _ in RUN_OPTIONS if "-ns" in flags)
+	assert flags[-1].lstrip("-") == "synteny"
 	assert PIPELINE.index(Synteny) == PIPELINE.index(Tree) + 1
 	assert Synteny.needs == ("genome",) and Synteny.optional
 	tool = Tools.load().tools["synteny"]

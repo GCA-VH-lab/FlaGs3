@@ -59,6 +59,29 @@ def draw_genes(layout: Layout, style: GeneStyle) -> str:
 	return '<g id="layer-genes">{}</g>'.format("".join(parts))
 
 
+def synteny_shade(identity: float, shades) -> str:
+	(low, pale), (high, dark) = shades
+	t = min(max((identity - low) / (high - low), 0.0), 1.0)
+	channels = [round(int(pale[i:i + 2], 16) + t * (int(dark[i:i + 2], 16) - int(pale[i:i + 2], 16))) for i in (1, 3, 5)]
+	return "#{:02x}{:02x}{:02x}".format(*channels)
+
+
+def draw_synteny(layout: Layout, links: list, shades) -> tuple[str, int]:
+	index = {row: i for i, row in enumerate(layout.rows)}
+	parts = []
+	for link in sorted(links, key=lambda l: (-l.length, l.identity)):
+		a, b = index.get(link.row_a), index.get(link.row_b)
+		if a is None or b is None or abs(a - b) != 1:
+			continue
+		ya, yb = layout.y(link.row_a), layout.y(link.row_b)
+		near, far = (link.start_b, link.end_b) if link.strand == "+" else (link.end_b, link.start_b)
+		points = [(layout.x(link.row_a, link.start_a), ya), (layout.x(link.row_a, link.end_a), ya),
+			(layout.x(link.row_b, far), yb), (layout.x(link.row_b, near), yb)]
+		parts.append('<polygon points="{}" fill="{}"/>'.format(
+			" ".join("{:.1f},{:.1f}".format(px, py) for px, py in points), synteny_shade(link.identity, shades)))
+	return '<g id="layer-synteny">{}</g>'.format("".join(parts)), len(parts)
+
+
 HATCH_ANGLE = {"sismis": 45, "genomad": -45, "defence": 0}
 HATCH_STROKE = 5
 HATCH_GAP = 5

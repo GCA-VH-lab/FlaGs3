@@ -220,9 +220,9 @@ class Component:
 
 class Core(Component):
 	name = "core"
-	summary = "mafft, trimal, VeryFastTree, IQ-TREE and BLAST+ for --tree and --blast_mode local"
+	summary = "mafft, trimal, VeryFastTree, IQ-TREE and BLAST+ for --tree, --synteny and --blast_mode local"
 	packages = ["mafft", "trimal", "veryfasttree", "iqtree", "blast"]
-	binaries = {"mafft": "mafft", "trimal": "trimal", "veryfasttree": "VeryFastTree", "iqtree": "iqtree", "blastp": "blastp"}
+	binaries = {"mafft": "mafft", "trimal": "trimal", "veryfasttree": "VeryFastTree", "iqtree": "iqtree", "blastp": "blastp", "synteny": "blastn"}
 
 	def installed(self) -> Optional[str]:
 		found = [self.locate(row, binary) for row, binary in self.binaries.items()]

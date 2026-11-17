@@ -10,6 +10,7 @@ plasmidfinder	blastn -query {in} -db {db} -out {out} -outfmt "6 qseqid sseqid pi
 padloc	padloc --faa {faa} --gff {gff} --outdir {out} --cpu {threads}				
 signalp	signalp6 --fastafile {fasta} --output_dir {out} --organism other --format txt --mode fast				
 sismis	sismis run -g {in} -o {out}				
+synteny	blastn -task blastn -query {in} -subject {subject} -out {out} -outfmt "6 qstart qend sstart send pident length" -evalue {evalue}				evalue=1e-5;identity=0.6;length=100
 trimal	trimal -in {in} -out {out} -fasta {mode}				
 veryfasttree	VeryFastTree {in}				
 jackhmmer				jackhmmer	iterations=3;incE=1e-10;incdomE=1e-10;chunk=100;chunks_per_worker=16;subcov=0.6

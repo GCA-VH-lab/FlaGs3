@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from flags3 import fasta
-from flags3.render import palettes, pdf
+from flags3.render import layers, palettes, pdf
 from flags3.render.data import RunData
 from flags3.render.figure import Figure, parts_for
-from flags3.render.style import Colours, FigureSpec, StyleError, parse_row, read_overrides, read_table
+from flags3.render.style import SYNTENY_SHADES, Colours, FigureSpec, StyleError, parse_row, read_overrides, read_table
 from flags3.run import RunDir
 from flags3.schema import Annotation
 from flags3.stage import Runner
@@ -16,6 +16,7 @@ from flags3.stages.cluster import Cluster
 from flags3.stages.extract import Extract
 from flags3.stages.fetch import Fetch
 from flags3.stages.figures import Figures
+from flags3.stages.synteny import Link
 from flags3.stages.tree import Leaf
 from tests.synth import write_genome
 
@@ -235,7 +236,7 @@ def test_occurrence_numbering():
 
 
 def test_subfamily_shades():
-	from flags3.render import palettes, pdf
+	from flags3.render import layers, palettes, pdf
 	ann = [Annotation("a", "-", None, None, "fill", "family:1/a", "1a", "t", None),
 		Annotation("b", "-", None, None, "fill", "family:1/b", "1b", "t", None),
 		Annotation("f", "-", None, None, "fill", "family:1", "1ab", "t", None),
@@ -382,3 +383,57 @@ def test_all_in_one_is_drawn_without_a_tree(tmp_path):
 	assert Figure(data, spec, Colours(spec.palette)).rows == data.order
 	required = next(s for s in read_table(None) if s.name == "tree")
 	assert required.tree and not required.tree_optional
+
+
+def _fake_synteny(run, links):
+	out = run.reset("synteny")
+	Link.write(out / Link.FILE, links)
+	status = run.status("synteny")
+	status.set("status", "ok")
+	status.save()
+
+
+def test_synteny_ribbons_join_neighbouring_rows_of_all_in_one(tmp_path):
+	run, runner = _run(tmp_path)
+	data = RunData.load(run)
+	top, middle, bottom = data.order
+	_fake_tree(run, data.order)
+	_fake_synteny(run, [
+		Link(top, 2000, 2600, middle, 100, 600, "+", 100.0, 601),
+		Link(middle, 100, 600, bottom, 100, 400, "-", 70.0, 301),
+		Link(top, 2000, 2600, bottom, 100, 400, "+", 90.0, 301)])
+	data = RunData.load(run)
+	assert len(data.links) == 3 and data.drawable("synteny") and not data.drawable("defence")
+	specs = {s.name: s for s in read_table(None)}
+	assert specs["all-in-one"].wants("synteny") and not specs["neighbors"].wants("synteny")
+	figure = Figure(data, specs["all-in-one"], Colours("bright"))
+	svg = figure.render()
+	layer = re.search(r'<g id="layer-synteny">(.*?)</g>', svg).group(1)
+	fills = re.findall(r'<polygon points="([^"]+)" fill="(#[0-9a-f]{6})"/>', layer)
+	assert len(fills) == 2
+	assert {f for _, f in fills} == {SYNTENY_SHADES[1][1], layers.synteny_shade(70.0, SYNTENY_SHADES)}
+	assert svg.index('id="layer-synteny"') < svg.index('id="layer-genes"')
+	assert ">Synteny<" in svg and "100% nucleotide identity" in svg
+	L = figure.layout
+	plus = [tuple(map(float, p.split(","))) for p in next(p for p, f in fills if f == SYNTENY_SHADES[1][1]).split()]
+	assert [y for _, y in plus] == [L.y(top), L.y(top), L.y(middle), L.y(middle)]
+	assert plus[0][0] == pytest.approx(L.x(top, 2000), abs=0.1) and plus[3][0] == pytest.approx(L.x(middle, 100), abs=0.1)
+	minus = [tuple(map(float, p.split(","))) for p in next(p for p, f in fills if f != SYNTENY_SHADES[1][1]).split()]
+	assert minus[3][0] == pytest.approx(L.x(bottom, 400), abs=0.1) and minus[2][0] == pytest.approx(L.x(bottom, 100), abs=0.1)
+	assert 'id="layer-synteny"' not in Figure(data, specs["neighbors"], Colours("bright")).render()
+	cfg = run.config()
+	cfg.update({"no_timestamp": True, "pdf": True})
+	cfg.save()
+	runner.config = cfg
+	assert runner.execute(Figures())
+	figures = run.stage_dir("figures")
+	assert 'id="layer-synteny"' in (figures / "all-in-one.svg").read_text()
+	assert (figures / "all-in-one.pdf").read_bytes().startswith(b"%PDF")
+
+
+def test_synteny_needs_tree_order(tmp_path):
+	run, runner = _run(tmp_path)
+	data = RunData.load(run)
+	_fake_synteny(run, [Link(data.order[0], 2000, 2600, data.order[1], 100, 600, "+", 100.0, 601)])
+	data = RunData.load(run)
+	assert data.links == [] and not data.drawable("synteny")

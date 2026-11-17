@@ -1013,3 +1013,48 @@ restartable with the same command; an incomplete run directory is reported
 and redone only with `--retry`, so a batch never silently deletes work. No
 parallelism — one run already uses every core — and no daemon: `nohup` or
 `tmux` is the daemon.
+
+### Synteny
+
+`synteny` (`-sy`) is a stage after `tree`, not a `WindowScan`: it compares rows
+with each other rather than scanning each window for something. It requires
+`extract` and `tree`, asks `fetch` for the `genome` slot, and is optional. The
+flag implies `--tree_order`, which implies `--tree`; the two implications are
+applied in that order in one pass over `IMPLIES`.
+
+The comparison is deliberately linear. Rows are taken in the order of
+`tree/leaves.tsv` and only consecutive rows are compared, N-1 pairs for N rows.
+All-against-all would be quadratic and would mostly compute blocks that have no
+place in the figure, since a ribbon can only be drawn between rows that are
+next to each other. That is also why the feature exists only in tree order: in
+input order the neighbour of a row is arbitrary.
+
+For each row the stage cuts `Window.lo..hi`, the span of the drawn genes, from
+the contig, loading each genome once, and writes it as `raw/<position>.fna`.
+Each pair is one run of the `synteny` tool row, `blastn -task blastn -query
+-subject`, with no database; the pairs run in a thread pool of `-c` workers,
+and the commands are recorded in the log from the main thread afterwards. Hits
+below the row's `identity` and `length` options are dropped, coordinates are
+shifted back to contig coordinates, and the result is `links.tsv`, one `Link`
+per block: `row_a`, `start_a`, `end_a`, `row_b`, `start_b`, `end_b`, `strand`,
+`identity`, `length`. Starts are always below ends; `strand` is `-` when the
+block is reverse-complemented between the two rows. A row whose assembly has no
+genome sequence is left out and its two pairs are skipped.
+
+Rendering: `RunData.links` is loaded when the run has a tree order and a
+`synteny` stage. `synteny` is a layer name in the figure table, on the
+`all-in-one` row only. `RunData.drawable` is what the figures stage asks to
+decide whether a figure has anything beyond clusters, so a run with synteny
+and no other annotation still gets its `all-in-one`. A `Figure` takes the links
+only when its rows are in tree order, and `draw_synteny` draws only links whose
+two rows are adjacent in the figure, so links left over from another order can
+never be drawn in the wrong place. A ribbon is a four-point polygon between the
+two row centre lines, its corners mapped by `Layout.x`, which already mirrors
+rows whose query is on the minus strand; a minus-strand link swaps the corners
+on the lower row, so inverted blocks cross and need no special case. The layer
+is the first thing in the body, under the bands, which are hatched so that
+what lies under them stays visible, and under the genes. Ribbons are opaque
+pale blues interpolated between `SYNTENY_SHADES` by identity, longest first so
+that short blocks stay on top; opaque because the PDF writer has no fill
+transparency. The legend gains a `Synteny` key when at least one ribbon was
+drawn.

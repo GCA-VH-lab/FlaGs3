@@ -34,7 +34,7 @@ class Figures(Stage):
 		written = []
 		for spec in specs:
 			extra = [s for s in spec.layers if s not in ("cluster", "cluster_rna")]
-			if extra and not any(s in data.annotations for s in extra):
+			if extra and not any(data.drawable(s) for s in extra):
 				note("{}: skipped, no {} annotations".format(spec.name, " or ".join(extra)))
 				continue
 			if spec.tree and not data.newick and not spec.tree_optional:

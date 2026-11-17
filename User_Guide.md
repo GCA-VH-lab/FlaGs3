@@ -325,6 +325,8 @@ Subfamilies are drawn as lighter shades of the family colour and listed in
 -t              mafft → trimal → VeryFastTree on the query proteins
 -iq             IQ-TREE with ModelFinder and 1000 ultrafast bootstraps instead
 -to             order rows in figures and tables by the tree
+-sy             synteny: compare the DNA of each row with the next row in tree
+                order and draw the shared blocks in the all-in-one figure
 -tm gt -tv 0.1  trimal mode and value (also cons, st, gappyout, strict, …)
 ```
 
@@ -397,6 +399,7 @@ myrun/
     cluster/          families.tsv, hits.tsv, annotations.tsv
     cluster_rna/      the same for non-coding RNA
     tree/             tree.nwk, alignment.aln, trimmed.aln, leaves.tsv, commands.txt
+    synteny/          links.tsv, raw/ (only with -sy)
     domains/          domains.tsv, annotations.tsv
     features/         features.tsv, annotations.tsv
     sismis/           secretion.tsv, diagnostics.tsv, annotations.tsv, raw/
@@ -528,7 +531,7 @@ outline, pseudogenes a blue one.
 | `tree` | the neighbourhoods aligned to the tree of the queries, bootstrap values in red, in the classic look |
 | `domains` | domain wedges inside the genes, numbered; TM regions as red hatching, signal peptides as a black triangle; family numbers prefixed `G` so they don't clash with domain numbers |
 | `sismis`, `genomad`, `defence` | genes in grey, the called systems as coloured bands under the row with codes `S1`, `M1`, `D1` |
-| `all-in-one` | everything, one band lane per tool; on the tree when the run has one, in input order without it |
+| `all-in-one` | everything, one band lane per tool; on the tree when the run has one, in input order without it; with `-sy`, synteny ribbons between the rows |
 | `classic` | the original FlaGs look; add a row with `tree` set to `1` for a classic tree figure |
 
 A figure is drawn only when a stage it shows produced something, and a
@@ -584,6 +587,33 @@ so a figure and its legend from one run match by name when several runs
 are open. A run made with `-nt` has no timestamp anywhere — plain,
 predictable names for scripts. The stage tables (`extract/genes.tsv`, …)
 are never stamped.
+
+### Synteny
+
+`-sy` shows how much of two neighbourhoods is the same DNA, not only which
+genes they share. Rows are put in tree order (`-sy` switches on `-to` and
+the tree), and each row is compared with the row under it: the two
+neighbourhoods, from the first drawn gene to the last, are cut from the
+genome sequences and aligned with `blastn`. Only rows next to each other are
+compared, so a run of N rows costs N-1 small searches, a second or two in
+all.
+
+In the `all-in-one` figure every aligned block is a pale blue ribbon from one row
+to the next, drawn under the genes and the hatched system bands. The darker
+the ribbon, the higher the nucleotide identity; a ribbon that crosses itself
+is a block inverted between the two rows. Other figures do not change.
+`synteny/links.tsv` lists the blocks with their coordinates on both contigs,
+strand, identity and length.
+
+Nucleotide similarity fades much faster than protein similarity: rows from
+the same genus are usually joined along the whole neighbourhood, rows from
+different families often by nothing or by a conserved gene or two, even when
+the tree and the family colours say the genes are homologous. No ribbon
+means no DNA-level match above the thresholds, not no homology. The
+thresholds are the options of the `synteny` row in the tools table: `evalue`
+(1e-5), `identity` (0.6, as a fraction) and `length` (100 bases); the
+command there uses `-task blastn`, more sensitive than BLAST's megablast
+default.
 
 ## 8. Your own figures
 

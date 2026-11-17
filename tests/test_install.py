@@ -91,7 +91,7 @@ def test_core_builds_missing_and_writes_rows(fake_home, monkeypatch):
 	def fake_create(self, prefix, packages):
 		created.append((prefix, packages))
 		(prefix / "bin").mkdir(parents=True, exist_ok=True)
-		for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp"):
+		for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp", "blastn"):
 			(prefix / "bin" / name).write_text("")
 		return prefix
 
@@ -103,6 +103,7 @@ def test_core_builds_missing_and_writes_rows(fake_home, monkeypatch):
 	tools = Tools.load(home.USER_TOOLS_TABLE)
 	assert tools["mafft"].command.startswith(str(home.ENVS / "core" / "bin" / "mafft") + " --auto")
 	assert tools["blastp"].command.startswith(str(home.ENVS / "core" / "bin" / "blastp") + " -query")
+	assert tools["synteny"].command.startswith(str(home.ENVS / "core" / "bin" / "blastn") + " -task blastn -query")
 	assert tools["jackhmmer"].engine == "jackhmmer"
 	assert install.Installer().components["core"].installed() == "installed"
 
@@ -110,7 +111,7 @@ def test_core_builds_missing_and_writes_rows(fake_home, monkeypatch):
 def test_core_uses_tools_on_path(fake_home, monkeypatch, tmp_path):
 	on_path = tmp_path / "usr" / "bin"
 	on_path.mkdir(parents=True)
-	for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp"):
+	for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp", "blastn"):
 		(on_path / name).write_text("")
 	monkeypatch.setattr(install.shutil, "which", lambda name: str(on_path / name) if (on_path / name).exists() else None)
 	monkeypatch.setattr(install.Micromamba, "create", lambda self, prefix, packages: pytest.fail("should not build"))
@@ -164,7 +165,7 @@ def test_flags3_home_override(tmp_path, monkeypatch):
 def test_versions_are_recorded(fake_home, monkeypatch):
 	def fake_create(self, prefix, packages):
 		(prefix / "bin").mkdir(parents=True, exist_ok=True)
-		for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp"):
+		for name in ("mafft", "trimal", "VeryFastTree", "iqtree", "blastp", "blastn"):
 			path = prefix / "bin" / name
 			path.write_text("#!/bin/sh\necho '{} 1.2.3'\n".format(name))
 			path.chmod(0o755)

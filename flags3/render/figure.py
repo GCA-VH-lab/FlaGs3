@@ -4,9 +4,9 @@ from io import StringIO
 from typing import Optional
 
 from flags3.render import layers, palettes, text
-from flags3.render.data import RunData
+from flags3.render.data import SYNTENY, RunData
 from flags3.render.layout import Layout
-from flags3.render.style import BAND_CODES, BAND_ORDER, STAGE_TITLES, Colours, FigureSpec
+from flags3.render.style import BAND_CODES, BAND_ORDER, STAGE_TITLES, SYNTENY_SHADES, Colours, FigureSpec
 from flags3.schema import MISSING
 
 CLUSTER_STAGES = ("cluster", "cluster_rna")
@@ -27,6 +27,8 @@ class Figure:
 		self.active = {s: a for s, a in data.annotations.items() if spec.wants(s)}
 		order = data.tree_order if (spec.tree and data.tree_order) else data.order
 		self.rows = [r for r in (rows or order) if r in data.genes]
+		self.links = data.links if (spec.wants(SYNTENY) and order is data.tree_order) else []
+		self.synteny_drawn = False
 		self.layout = Layout(data, spec, self.rows, [s for s in self.active if s in BAND_ORDER])
 		self.legend_panels: list[tuple[str, list[tuple[str, str, str]], Optional[str]]] = []
 
@@ -49,6 +51,10 @@ class Figure:
 			if entries:
 				self.legend_panels.append((STAGE_TITLES["cluster"], entries, None))
 		body = [L.clip_defs()]
+		if self.links:
+			svg, drawn = layers.draw_synteny(L, self.links, SYNTENY_SHADES)
+			body.append(svg)
+			self.synteny_drawn = drawn > 0
 		side: dict[str, list] = {}
 		band_tables = self._band_tables()
 		for stage in L.band_stages:
@@ -265,15 +271,26 @@ class Figure:
 					parts.append('<rect x="{}" y="{}" width="12" height="10" fill="{}" stroke="{}" stroke-width="1"/>'.format(ex + 2, ey - 8, colour, colour))
 				parts.append(text.text(ex + 20, ey, "{}. {}".format(code, label)))
 			y += (-(-len(items) // cols) + 1) * 16 + 8
+		keys = []
+		if self.synteny_drawn:
+			keys.append((STAGE_TITLES[SYNTENY], [("{:g}% nucleotide identity".format(identity),
+				self._shade_mark(layers.synteny_shade(identity, SYNTENY_SHADES))) for identity in (70.0, 85.0, 100.0)]))
 		if genes:
-			parts.append(text.text(L.pad, y, "Genes", weight="bold"))
+			keys.append(("Genes", [(label, lambda x, y, shape=shape: self._mark(x, y, shape)) for _, label, shape in genes]))
+		for title, items in keys:
+			parts.append(text.text(L.pad, y, title, weight="bold"))
 			ex, ey = L.pad, y + 16
-			for _, label, shape in genes:
-				parts.append(self._mark(ex + 2, ey - 8, shape))
+			for label, mark in items:
+				parts.append(mark(ex + 2, ey - 8))
 				parts.append(text.text(ex + 20, ey, label))
 				ex += int(text.width(label, L.font)) + 46
+			needed = max(needed, ex)
 			y += 36
 		return '<g id="layer-legend">{}</g>'.format("".join(parts)), y - top, needed
+
+	@staticmethod
+	def _shade_mark(colour: str):
+		return lambda x, y: '<rect x="{}" y="{}" width="12" height="10" fill="{}"/>'.format(x, y, colour)
 
 	@staticmethod
 	def _mark(x, y, shape) -> str:

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from flags3.schema import Annotation, Gene, RowInfo, Window
 
+SYNTENY = "synteny"
+
 
 @dataclass
 class RunData:
@@ -15,6 +17,10 @@ class RunData:
 	annotations: dict[str, list[Annotation]] = field(default_factory=dict)
 	present: set = field(default_factory=set)
 	whole: dict = field(default_factory=dict)
+	links: list = field(default_factory=list)
+
+	def drawable(self, layer: str) -> bool:
+		return layer in self.annotations or (layer == SYNTENY and bool(self.links))
 
 	def placement(self, stage: str, a: Annotation) -> str:
 		if a.kind == "verdict":
@@ -39,6 +45,10 @@ class RunData:
 			from flags3.stages.tree import Leaf
 			tree_order = [l.row_id for l in Leaf.read(run.stage_file("tree", Leaf.FILE)) if l.row_id in genes]
 			newick = run.stage_file("tree", "tree.nwk").read_text().strip()
+		links = []
+		if tree_order and run.has(SYNTENY):
+			from flags3.stages.synteny import Link
+			links = Link.read(run.stage_file(SYNTENY, Link.FILE))
 		annotations = {}
 		for stage in run.stages():
 			path = run.stage_file(stage, Annotation.FILE)
@@ -47,7 +57,7 @@ class RunData:
 				if found:
 					annotations[stage] = found
 		return cls(genes, rows, windows, order, tree_order, newick, annotations,
-			{s for s in run.stages() if run.has(s)}, whole_calls(run))
+			{s for s in run.stages() if run.has(s)}, whole_calls(run), links)
 
 	def labels(self) -> dict[str, str]:
 		per_query: dict[str, int] = {}

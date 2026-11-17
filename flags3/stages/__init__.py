@@ -10,7 +10,8 @@ from flags3.stages.genomad import Genomad
 from flags3.stages.plasmidfinder import PlasmidFinder
 from flags3.stages.report import Report
 from flags3.stages.sismis import Sismis
+from flags3.stages.synteny import Synteny
 from flags3.stages.tree import Tree
 
-PIPELINE = (Blast, Fetch, Extract, Cluster, ClusterRna, Tree, Domains, Features, Sismis, Genomad, PlasmidFinder, Defence, Report, Figures)
+PIPELINE = (Blast, Fetch, Extract, Cluster, ClusterRna, Tree, Synteny, Domains, Features, Sismis, Genomad, PlasmidFinder, Defence, Report, Figures)
 BY_NAME = {stage.name: stage for stage in PIPELINE}

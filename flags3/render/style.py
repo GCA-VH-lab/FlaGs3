@@ -11,7 +11,7 @@ TABLE_NAME = "visualisation_table.tsv"
 STAGE_TITLES = {
 	"cluster": "Protein clusters", "cluster_rna": "RNA clusters", "domains": "Domains",
 	"features": "Protein features", "sismis": "Secretion systems", "genomad": "Mobile elements",
-	"defence": "Defence systems", "plasmidfinder": "Plasmid replicons",
+	"defence": "Defence systems", "plasmidfinder": "Plasmid replicons", "synteny": "Synteny",
 }
 BAND_CODES = {"sismis": "S", "genomad": "M", "defence": "D", "plasmidfinder": "P"}
 BAND_ORDER = ("sismis", "genomad", "defence", "plasmidfinder")
@@ -20,6 +20,7 @@ GEOMETRY = {
 	"bases_per_pixel": 10.4, "label_step": 12, "arrow_head": 7, "min_gene_width": 13,
 	"band_opacity": 0.85, "band_margin": 3, "tree_width": 320,
 }
+SYNTENY_SHADES = ((60.0, "#e6eff9"), (100.0, "#d3e2f5"))
 CLASSIC_GEOMETRY = {"font_size": 12, "row_height": 20, "gene_height": 15, "bases_per_pixel": 16.0}
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.8.0
+
+- `-sy/--synteny` compares the neighbourhood DNA of each row with the next
+  row in tree order by `blastn` and draws the shared blocks in the
+  `all-in-one` figure as pale blue ribbons under the genes and the system bands,
+  darker for higher nucleotide identity, crossing where a block is inverted.
+  It implies `-to`. Only neighbouring rows are compared, so the cost grows
+  with the number of rows, not its square. The blocks are listed in
+  `synteny/links.tsv`; thresholds are the options of the new `synteny` row
+  of the tools table.
+
 ## 3.7.0
 
 - `-bx/--blast_exclude TAXIDS` leaves the given NCBI taxonomy ids, and

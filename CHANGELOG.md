@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.9.0
+
+- A local BlastP search (`-bm local`) wrote its hits without the accession
+  version (`WP_053886483`), and NCBI then found no genome for any of them:
+  the run stopped in `fetch` with an empty `failures.tsv`. The `blastp` row
+  of the tools table now asks BLAST for versioned accessions (`saccver`);
+  an installed tools table gets the new row from `flags3 install core
+  --update`. A query for which NCBI lists no assembly is now a line of
+  `fetch/failures.tsv`.
+
 ## 3.8.0
 
 - `-sy/--synteny` compares the neighbourhood DNA of each row with the next

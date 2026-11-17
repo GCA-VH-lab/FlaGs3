@@ -79,6 +79,7 @@ def test_ipg_resolution_and_download(tmp_path, monkeypatch):
 	assert [t.assembly for t in targets] == ["GCF_000000001.1", MISSING]
 	assert targets[0].accessions == "WP_001"
 	assert targets[1].status.startswith("unresolved")
+	assert [(f.subject, f.reason) for f in failures] == [("WP_999", "unresolved: IPG lists no assembly")]
 	g = genomes["GCF_000000001.1"]
 	assert g.source == "ncbi" and g.usable
 	assert g.rna == MISSING and g.genome == MISSING

@@ -1058,3 +1058,15 @@ pale blues interpolated between `SYNTENY_SHADES` by identity, longest first so
 that short blocks stay on top; opaque because the PDF writer has no fill
 transparency. The legend gains a `Synteny` key when at least one ribbon was
 drawn.
+
+### Accession versions from a local BlastP
+
+IPG answers with versioned protein accessions, and `IpgMapper._ipg_chunk`
+matches its rows to the queries by exact accession, so an accession without a
+version resolves to nothing. BLAST's `sacc` column drops the version and
+`saccver` keeps it; the `blastp` tool row uses `saccver` (3.9.0). The row is
+copied into the user's tools table by the installer, so an existing
+installation takes the change from `flags3 install core --update`. A query IPG
+lists no assembly for is written to `fetch/failures.tsv`, which the error
+message of an all-unresolved run points at; before 3.9.0 only IPG errors and
+dropped assemblies were, and the file could be empty.

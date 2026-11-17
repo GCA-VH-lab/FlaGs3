@@ -39,6 +39,7 @@ def _touch(path: Path) -> None:
 		pass
 
 
+
 class GenomeCache:
 	def __init__(self, directory: Path):
 		self.directory = Path(directory)
@@ -180,6 +181,8 @@ class Fetch(Stage):
 			chosen = result.assemblies.get(protein) or []
 			if not chosen:
 				reason = result.errors.get(protein, "unresolved: IPG lists no assembly")
+				if protein not in result.errors:
+					failures.append(Failure(protein, reason))
 				targets.append(QueryTarget(protein, MISSING, MISSING, reason if reason.startswith("unresolved") else "unresolved: " + reason, "ipg"))
 				continue
 			for choice in chosen:

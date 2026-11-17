@@ -137,3 +137,9 @@ def test_real_blastp_honours_the_exclusion(tmp_path):
 	assert sorted(h.accession.split(".")[0] for h in blast.dedupe(hits)) == ["WP_000000001", "XP_000000002"]
 	kept = blast.LocalBlast(tools["blastp"], str(tmp_path / "db"), 1e-5, 10, 1, tmp_path / "some", ["9606"]).search(">q\n{}\n".format(seq_a))
 	assert [h.accession.split(".")[0] for h in blast.dedupe(kept)] == ["WP_000000001"]
+
+
+def test_local_blast_asks_for_versioned_accessions():
+	from flags3.tools import Tools
+	argv = Tools.load().tools["blastp"].argv(db="d", evalue=1, hits=5, **{"in": "q"})
+	assert argv[argv.index("-outfmt") + 1].split()[:2] == ["6", "saccver"]

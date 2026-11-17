@@ -23,6 +23,7 @@ RUN_OPTIONS = (
 	(("-bd", "--blast_db"), dict(default="refseq_select", help="refseq_select, refseq_protein, genbank, swissprot, or a local database path. Default = refseq_select")),
 	(("-be", "--blast_evalue"), dict(type=float, default=1e-5, help="BlastP E-value cutoff. Default = 1e-5")),
 	(("-bh", "--blast_hits"), dict(type=int, default=50, help="Hits carried forward as queries; each one is a genome and a row. Default = 50")),
+	(("-bx", "--blast_exclude"), dict(metavar="TAXIDS", help="With -bm local: leave every sequence of these NCBI taxonomy ids and of everything below them out of the search, comma-separated; 2759 leaves out eukaryotes. Needs a database with taxonomy and BLAST+ 2.15 or newer for ids above species level")),
 	(("-bw", "--blast_wait"), dict(type=float, default=60, help="Minutes to wait on NCBI's queue before giving up. Default = 60")),
 	(("-u", "--user_email"), dict(help="Email address, required by NCBI Entrez")),
 	(("-api", "--api_key"), dict(help="NCBI API key; raises the request rate. Without -api, the NCBI_API_KEY environment variable is used, which keeps the key out of the run's files and the process list")),

@@ -54,6 +54,8 @@ class Blast(Stage):
 		email = config.text("user_email")
 		if mode == "remote" and not email:
 			raise blast.BlastError("remote BLAST needs -u/--user_email")
+		if mode == "remote" and blast.parse_taxids(config.text("blast_exclude")):
+			raise blast.BlastError("-bx/--blast_exclude works on a local database; add -bm local and -bd")
 		Entrez.email = email
 		Entrez.tool = "flags3"
 		if ncbi.api_key(config):
@@ -91,6 +93,7 @@ class Blast(Stage):
 		hits = config.integer("blast_hits", 50)
 		if mode == "local":
 			tools = Tools.load(config.tools_table())
-			return blast.LocalBlast(tools["blastp"], database, evalue, hits, config.workers(), out / "raw")
+			return blast.LocalBlast(tools["blastp"], database, evalue, hits, config.workers(), out / "raw",
+				blast.parse_taxids(config.text("blast_exclude")))
 		return blast.RemoteBlast(database, evalue, hits, config.text("user_email"),
 			config.number("blast_wait", 60) * 60, report=lambda m: print(">> " + m, flush=True))

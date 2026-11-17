@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.7.0
+
+- `-bx/--blast_exclude TAXIDS` leaves the given NCBI taxonomy ids, and
+  everything below them, out of a local BlastP search (`-bm local`);
+  `-bx 2759` searches a full `refseq_protein` without its eukaryotes. The
+  guide now says how to install a local database.
+
 ## 3.6.0
 
 - Systems are coloured from one sequence across all kinds: secretion

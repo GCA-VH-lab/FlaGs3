@@ -835,6 +835,24 @@ appends its accessions as bare queries after the list's own, skipping any
 the list already has. Nothing else knows BLAST happened; a rerun of `fetch`
 on the directory picks the accessions up again.
 
+`-bh` is per starting point: each query gets its own search with that many
+target sequences, and the hits of all searches are merged without
+duplicates. A caller that wants a total — the web service allows 50 hits a
+job — divides before calling.
+
+`-bx/--blast_exclude` passes `-negative_taxids` to the local `blastp`,
+after the tools-table command and beside `-num_threads`, so it is a
+property of the run and not of the tool row. It exists for the one database
+most people will install, NCBI's `refseq_protein`, a third of which FlaGs3
+cannot use: restricting at search time needs no second copy of a
+several-hundred-GB database and no alias file (`blastdb_aliastool` can
+restrict to a taxid list but not exclude one). The ids are validated as
+digits and commas and handed to BLAST unexpanded; BLAST+ from 2.15 resolves
+an id above species level through `taxonomy4blast.sqlite3`, earlier
+versions do not, which is documented and not worked around. With `-bm
+remote` the option is an error, not a no-op: QBLAST would need an Entrez
+query instead, and a filter that silently does nothing is worse than none.
+
 ## Proviruses and classifications
 
 geNomad reports two kinds of thing, and only one is an element: a provirus

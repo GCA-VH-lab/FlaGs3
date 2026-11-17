@@ -16,6 +16,7 @@ from flags3.tools import Tool, brief
 ACCESSION = re.compile(r"^[ANYXW]P_\d+(\.\d+)?$", re.I)
 INSDC = re.compile(r"^[A-Z]{3}\d{5,7}(\.\d+)?$")
 RESIDUES = set("ACDEFGHIKLMNPQRSTVWYBZXUO*-")
+TAXIDS = re.compile(r"^\d+(,\d+)*$")
 BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
 POLL_SECONDS = 60
 DB_ALIASES = {
@@ -66,6 +67,15 @@ def parse_query(lines, source: str) -> Query:
 	if bad:
 		raise BlastError("{} is neither a protein accession nor a protein sequence (unexpected: {})".format(source, " ".join(bad)))
 	return Query(name, sequence, None)
+
+
+def parse_taxids(text: str) -> list[str]:
+	cleaned = "".join(text.split())
+	if not cleaned:
+		return []
+	if not TAXIDS.match(cleaned):
+		raise BlastError("--blast_exclude takes NCBI taxonomy ids separated by commas, such as 2759; got {!r}".format(text))
+	return cleaned.split(",")
 
 
 def accession_in(*texts) -> Optional[str]:
@@ -168,13 +178,15 @@ class RemoteBlast:
 
 
 class LocalBlast:
-	def __init__(self, tool: Tool, database: str, evalue: float, max_hits: int, threads: int, work: Path):
+	def __init__(self, tool: Tool, database: str, evalue: float, max_hits: int, threads: int, work: Path,
+			exclude: Optional[list[str]] = None):
 		self.tool = tool
 		self.database = DB_ALIASES["local"].get(database, database)
 		self.evalue = evalue
 		self.max_hits = max_hits
 		self.threads = threads
 		self.work = work
+		self.exclude = exclude or []
 
 	def search(self, fasta: str) -> list[BlastHit]:
 		found, where = self.tool.locate()
@@ -186,6 +198,8 @@ class LocalBlast:
 		argv = self.tool.argv(db=self.database, evalue=self.evalue, hits=self.max_hits, **{"in": query})
 		if self.threads:
 			argv += ["-num_threads", str(self.threads)]
+		if self.exclude:
+			argv += ["-negative_taxids", ",".join(self.exclude)]
 		debug("blast: " + " ".join(argv))
 		done = subprocess.run(argv, capture_output=True, text=True, env=self.tool.environment())
 		record_command(argv, done.returncode, stderr=done.stderr)

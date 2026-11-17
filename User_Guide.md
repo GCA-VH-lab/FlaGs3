@@ -238,13 +238,29 @@ MKVLLAKQRTV...	BLAST
 -bm local       blastp from flags3 install core; -bd is then a local database path
 -bd refseq_select   or refseq_protein, genbank, swissprot
 -be 1e-5        E-value cutoff
--bh 50          hits carried forward as queries; each is a genome and a row
+-bh 50          hits carried forward as queries, per starting point; each is a
+                genome and a row
+-bx 2759        local only: leave these taxonomy ids, and everything below
+                them, out of the search (2759 = eukaryotes)
 -bw 60          minutes to wait on NCBI's queue
 ```
 
 The hits go to `blast/hits.tsv` with E-values and descriptions, and
 `blast/accessions.txt` is a ready input list for repeating the run without
 searching again.
+
+A local database is one of NCBI's preformatted ones, fetched with the
+`update_blastdb.pl` that comes with BLAST+ (`update_blastdb.pl --decompress
+refseq_protein` in an empty directory; hundreds of GB), or your own from
+`makeblastdb`. `-bd` is then the path without extension, for example
+`-bd /data/blastdb/refseq_protein`. FlaGs3 can only use hits whose genomes
+it can fetch, so a search of all of RefSeq spends most of its hits on
+bacteria and archaea anyway; `-bx 2759` makes that explicit and keeps
+eukaryotic proteins from taking the places. `-bx` needs the taxonomy files
+NCBI ships inside its databases (`taxonomy4blast.sqlite3` beside the
+database, or in the directory `BLASTDB` names) and, for an id above species
+level such as 2759, BLAST+ 2.15 or newer; older versions take species ids
+only and silently match nothing else.
 
 ## 4. Running
 

@@ -197,6 +197,9 @@ AAC73113.1	U00096
   own for this. The `via` column says how each query was placed: `ipg`,
   `paired` (you named the assembly), `local` (found in the genome
   directory), `blast`.
+- An accession may be written without its version: `WP_005328829` means
+  whatever version NCBI or the genome carries, `WP_005328829.1` only that
+  one.
 - A tab and an assembly accession pin the genome. Add `-rm` if a paired
   query might be annotated under a different accession in that assembly;
   IPG is then asked, and the query is matched under whatever name it has

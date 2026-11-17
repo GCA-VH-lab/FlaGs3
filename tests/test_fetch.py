@@ -247,3 +247,34 @@ def test_api_key_falls_back_to_the_environment(monkeypatch, tmp_path):
 	cfg.update({"api_key": ""})
 	cfg.save()
 	assert "ENVKEY" not in run.config_file.read_text()
+
+
+VERSIONED_IPG = """Id\tSource\tNucleotide Accession\tStart\tStop\tStrand\tProtein\tProtein Name\tOrganism\tStrain\tAssembly
+7\tRefSeq\tNZ_CP001\t100\t400\t+\tWP_500.1\tprotein\tEscherichia coli\tK-12\tGCF_000000001.1
+8\tRefSeq\tNZ_CP009\t100\t400\t+\tWP_5000.1\tother\tEscherichia coli\tB\tGCF_000000009.1
+9\tRefSeq\tNZ_CP003\t1\t9\t+\tWP_600.2\tthird\tSomething\t\tGCF_000000003.1
+"""
+
+
+def test_an_accession_without_a_version_resolves(tmp_path, monkeypatch):
+	mapper = ncbi.IpgMapper("a@b.c", pause=0)
+	monkeypatch.setattr(ncbi.IpgMapper, "_fetch_ipg", lambda self, proteins: VERSIONED_IPG)
+	result = mapper.map(["WP_500", "WP_600.2", "WP_600.1", "WP_50"])
+	assert result.assemblies["WP_500"] == ["GCF_000000001.1"] and result.aliases("WP_500", "GCF_000000001.1") == {"WP_500.1"}
+	assert result.assemblies["WP_600.2"] == ["GCF_000000003.1"]
+	assert result.assemblies["WP_600.1"] == [] and result.assemblies["WP_50"] == []
+	gff = tmp_path / "g.gff"
+	gff.write_text("##gff-version 3\n##sequence-region A 1 5000\n"
+		"A\t.\tgene\t100\t400\t.\t+\t.\tID=gene-T1;locus_tag=T1;gene_biotype=protein_coding\n"
+		"A\t.\tCDS\t100\t400\t.\t+\t0\tID=cds-WP_500.1;Parent=gene-T1;protein_id=WP_500.1;locus_tag=T1;product=p\n")
+	from flags3.genome import GeneTable
+	table = GeneTable(gff)
+	assert table.find({"WP_500"}) == 0 and table.find({"WP_500.1"}) == 0
+	assert table.find({"WP_500.2"}) is None and table.find({"WP_50"}) is None
+	genomes = tmp_path / "genomes"
+	genomes.mkdir()
+	shutil.copy(gff, genomes / "GCF_V_genomic.gff")
+	(genomes / "GCF_V_protein.faa").write_text(">WP_500.1 p [E]\nMAAA\n")
+	cache = GenomeCache(genomes)
+	assert cache.by_protein("WP_500") == cache.by_protein("WP_500.1") and cache.by_protein("WP_500.1")
+	assert cache.by_protein("WP_500.2") is None

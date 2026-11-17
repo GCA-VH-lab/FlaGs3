@@ -1070,3 +1070,16 @@ installation takes the change from `flags3 install core --update`. A query IPG
 lists no assembly for is written to `fetch/failures.tsv`, which the error
 message of an all-unresolved run points at; before 3.9.0 only IPG errors and
 dropped assemblies were, and the file could be empty.
+
+### Accessions without a version
+
+A query written without a version (`WP_053886483`) stands for any version.
+Three lookups honour that, each only for a query with no dot in it, so a
+versioned query still matches exactly: `IpgMapper._ipg_chunk` files an IPG row
+under the unversioned query when the row's accession without its version
+equals it; `GeneTable.find` keeps a second index by unversioned accession for
+paired queries; `GenomeCache.by_protein` does the same over the protein files
+of the genome directory. The query keeps the spelling the user gave it in row
+ids and tables; the versioned accession found in the genome is in the
+`accessions` column of `fetch/queries.tsv` and the `accession` column of the
+rows table.

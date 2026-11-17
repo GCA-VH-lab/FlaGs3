@@ -9,6 +9,9 @@
   an installed tools table gets the new row from `flags3 install core
   --update`. A query for which NCBI lists no assembly is now a line of
   `fetch/failures.tsv`.
+- A query may be written without its accession version (`WP_053886483`);
+  it then matches whatever version NCBI or the genome carries. It used to
+  resolve to nothing.
 
 ## 3.8.0
 

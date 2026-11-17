@@ -46,6 +46,7 @@ class GenomeCache:
 		self.directory.mkdir(parents=True, exist_ok=True)
 		self.index: dict[str, dict[str, Path]] = {}
 		self._protein_index: Optional[dict[str, str]] = None
+		self._unversioned: dict[str, str] = {}
 		self.scan()
 
 	def scan(self) -> None:
@@ -90,7 +91,8 @@ class GenomeCache:
 				if "faa" in slots and net.intact(slots["faa"]):
 					for name, _, _ in fasta.read(slots["faa"]):
 						self._protein_index.setdefault(name, base)
-		return self._protein_index.get(protein)
+						self._unversioned.setdefault(name.split(".")[0], base)
+		return self._protein_index.get(protein) or (self._unversioned.get(protein) if "." not in protein else None)
 
 
 class Fetch(Stage):

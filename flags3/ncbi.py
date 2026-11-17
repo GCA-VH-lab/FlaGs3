@@ -121,8 +121,9 @@ class IpgMapper:
 			ipg_id, accession, assembly = fields[0], fields[6], fields[-1]
 			group = groups.setdefault(ipg_id, {"queries": set(), "by_assembly": {}})
 			group["by_assembly"].setdefault(assembly, set()).add(accession)
-			if accession in queries:
-				group["queries"].add(accession)
+			asked = accession if accession in queries else accession.split(".")[0]
+			if asked in queries:
+				group["queries"].add(asked)
 		for group in groups.values():
 			for q in group["queries"]:
 				entry = result.accessions.setdefault(q, {})

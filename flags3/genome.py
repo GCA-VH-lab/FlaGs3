@@ -39,11 +39,13 @@ class GeneTable:
 		self.overruns: list[tuple[str, int, int]] = []
 		self._circular: set[str] = set()
 		self._by_accession: dict[str, int] = {}
+		self._unversioned: dict[str, int] = {}
 		self._parse(gff)
 		self._index()
 
 	def find(self, accessions: set[str]) -> Optional[int]:
 		hits = [self._by_accession[a] for a in accessions if a in self._by_accession]
+		hits += [self._unversioned[a] for a in accessions if "." not in a and a in self._unversioned]
 		return min(hits) if hits else None
 
 	def contig_of(self, index: int) -> Contig:
@@ -60,6 +62,8 @@ class GeneTable:
 			contig.last = i + 1
 			contig.reach.append(max(contig.reach[-1] if contig.reach else 0, g.end))
 			self._by_accession.setdefault(g.accession, i)
+			if g.accession:
+				self._unversioned.setdefault(g.accession.split(".")[0], i)
 		for contig in self.contigs.values():
 			if contig.length and contig.reach[-1] > contig.length and not contig.circular:
 				self.overruns.append((contig.name, contig.length, contig.reach[-1]))

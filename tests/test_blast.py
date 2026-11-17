@@ -142,4 +142,61 @@ def test_real_blastp_honours_the_exclusion(tmp_path):
 def test_local_blast_asks_for_versioned_accessions():
 	from flags3.tools import Tools
 	argv = Tools.load().tools["blastp"].argv(db="d", evalue=1, hits=5, **{"in": "q"})
-	assert argv[argv.index("-outfmt") + 1].split()[:2] == ["6", "saccver"]
+	assert argv[argv.index("-outfmt") + 1].split()[:3] == ["6", "qseqid", "saccver"]
+
+
+BATCH_BLASTP = """#!/usr/bin/env python3
+import sys
+query = sys.argv[sys.argv.index("-query") + 1]
+with open(query + ".calls", "a") as calls:
+	calls.write("call\\n")
+names = [line[1:].strip() for line in open(query) if line.startswith(">")]
+lead = (lambda name: name + "\\t") if any("qseqid" in a for a in sys.argv) else (lambda name: "")
+for i, name in enumerate(names):
+	print("{}WP_00{}.1\\t1e-{}0\\t100.0\\thit".format(lead(name), i + 4, 5 - i))
+print(lead(names[0]) + "WP_009.1\\t1e-9\\t50.0\\tshared")
+print(lead(names[-1]) + "WP_009.1\\t1e-8\\t40.0\\tshared")
+"""
+
+
+def _batch_run(tmp_path, row):
+	script = tmp_path / "blastp"
+	script.write_text(BATCH_BLASTP)
+	script.chmod(script.stat().st_mode | stat.S_IEXEC)
+	table = tmp_path / "tools.tsv"
+	table.write_text("#name\tcommand\nblastp\t{} -query {{in}} -db {{db}} {}\n".format(script, row))
+	run = RunDir(tmp_path / "out").create("test", "")
+	(run.input_dir / "list.txt").write_text("WP_100.1\tBLAST\nWP_200.1\tBLAST\nWP_300.1\tBLAST\n")
+	cfg = run.config()
+	cfg.update({"inputs": "list.txt", "tools": str(table), "blast_mode": "local", "blast_db": "mydb", "blast_inline": True,
+		"blast_hits": 5, "cpu": 1})
+	cfg.save()
+	return run, Runner(run, cfg, report=lambda m: None)
+
+
+def test_several_local_queries_are_one_search(tmp_path, monkeypatch):
+	monkeypatch.setattr(blast, "fetch_sequence", lambda accession: "MKVLLAKQ")
+	run, runner = _batch_run(tmp_path, '-outfmt "6 qseqid saccver evalue bitscore stitle"')
+	assert runner.execute(Blast())
+	raw = run.stage_dir("blast") / "raw"
+	assert (raw / "query.fasta.calls").read_text().count("call") == 1
+	assert [l for l in (raw / "query.fasta").read_text().splitlines() if l.startswith(">")] == [">q1", ">q2", ">q3"]
+	hits = HitRow.read(run.stage_file("blast", HitRow.FILE))
+	queries = list(dict.fromkeys(h.query for h in hits))
+	assert queries == ["WP_100.1", "WP_200.1", "WP_300.1"]
+	assert [h.accession for h in hits if h.query == queries[0]] == ["WP_004.1", "WP_009.1"]
+	assert [h.accession for h in hits if h.query == queries[1]] == ["WP_005.1"]
+	assert [h.accession for h in hits if h.query == queries[2]] == ["WP_006.1", "WP_009.1"]
+	lines = [l for l in run.stage_file("blast", "accessions.txt").read_text().splitlines() if not l.startswith("#")]
+	assert lines == ["WP_004.1", "WP_009.1", "WP_005.1", "WP_006.1"]
+
+
+def test_a_blastp_row_without_qseqid_searches_one_by_one(tmp_path, monkeypatch):
+	monkeypatch.setattr(blast, "fetch_sequence", lambda accession: "MKVLLAKQ")
+	run, runner = _batch_run(tmp_path, "")
+	assert runner.execute(Blast())
+	raw = run.stage_dir("blast") / "raw"
+	assert (raw / "query.fasta.calls").read_text().count("call") == 3
+	hits = HitRow.read(run.stage_file("blast", HitRow.FILE))
+	assert [h.accession for h in hits if h.query == "WP_200.1"] == ["WP_004.1", "WP_009.1"]
+	assert blast.LocalBlast(Tools.load().tools["blastp"], "d", 1, 5, 1, tmp_path).batched

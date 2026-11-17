@@ -1,5 +1,5 @@
 #name	command	directory	scan_range	engine	options
-blastp	blastp -query {in} -db {db} -outfmt "6 saccver evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}				
+blastp	blastp -query {in} -db {db} -outfmt "6 qseqid saccver evalue bitscore stitle" -evalue {evalue} -max_target_seqs {hits}				
 deeptmhmm	dtm2 {fasta} {out} --simplify-io				
 defensefinder	defense-finder run --db-type gembase -o {out} {faa}				
 genomad	genomad end-to-end --cleanup --threads {threads} --splits {splits} {in} {out} {db}				splits=0;batch_mb=50

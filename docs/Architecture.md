@@ -1083,3 +1083,17 @@ of the genome directory. The query keeps the spelling the user gave it in row
 ids and tables; the versioned accession found in the genome is in the
 `accessions` column of `fetch/queries.tsv` and the `accession` column of the
 rows table.
+
+### Several BlastP queries in one local search
+
+`blastp` takes a multi-FASTA query and scans the database once for the batch,
+so `LocalBlast.search_batch` writes all starting proteins into one query file
+under the ids `q1`, `q2`, … (the users' names may repeat or contain anything)
+and splits the hits back by the first output column. That column is `qseqid`
+in the `blastp` tool row, and `LocalBlast.batched` is simply whether the row's
+command contains it: the row, not the code, decides, so a user table written
+by an older installer keeps working one protein at a time until `flags3
+install core --update` rewrites it. `-max_target_seqs` is per query in BLAST,
+so `-bh` means the same in both paths. The stage fetches every query sequence
+first, then searches; `RemoteBlast` has `batched = False` and keeps one NCBI
+job per protein, each with its own job id to follow.

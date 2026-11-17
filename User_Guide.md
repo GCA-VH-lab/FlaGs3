@@ -248,6 +248,10 @@ MKVLLAKQRTV...	BLAST
 -bw 60          minutes to wait on NCBI's queue
 ```
 
+Several starting points are searched together against a local database, in
+one `blastp` call that reads the database once; at NCBI each is its own
+job, one after another.
+
 The hits go to `blast/hits.tsv` with E-values and descriptions, and
 `blast/accessions.txt` is a ready input list for repeating the run without
 searching again.

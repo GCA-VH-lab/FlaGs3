@@ -61,13 +61,21 @@ class Blast(Stage):
 		if ncbi.api_key(config):
 			Entrez.api_key = ncbi.api_key(config)
 		searcher = self._searcher(mode, config, out)
+		sequences = [query.sequence or blast.fetch_sequence(query.accession) for query in queries]
+		database = config.text("blast_db", "refseq_select")
+		if searcher.batched and len(queries) > 1:
+			note("BlastP ({}) for {} queries in one search against {}".format(mode, len(queries), database))
+			found = searcher.search_batch(sequences)
+		else:
+			found = []
+			for query, sequence in zip(queries, sequences):
+				note("BlastP ({}) for {} against {}".format(mode, query.label, database))
+				if mode == "remote":
+					print(">> waiting on NCBI's queue; this often takes several minutes.", flush=True)
+				found.append(searcher.search(">{}\n{}\n".format(query.name, sequence)))
 		rows, accessions, seen = [], [], set()
-		for query in queries:
-			sequence = query.sequence or blast.fetch_sequence(query.accession)
-			note("BlastP ({}) for {} against {}".format(mode, query.label, config.text("blast_db", "refseq_select")))
-			if mode == "remote":
-				print(">> waiting on NCBI's queue; this often takes several minutes.", flush=True)
-			hits = blast.dedupe(searcher.search(">{}\n{}\n".format(query.name, sequence)))
+		for query, raw in zip(queries, found):
+			hits = blast.dedupe(raw)
 			if not hits:
 				print("Warning: BlastP returned no hits for {}. Try a larger --blast_evalue or a fuller --blast_db.".format(query.label))
 			for hit in hits:

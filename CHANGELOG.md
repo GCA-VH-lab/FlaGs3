@@ -12,6 +12,11 @@
 - A query may be written without its accession version (`WP_053886483`);
   it then matches whatever version NCBI or the genome carries. It used to
   resolve to nothing.
+- Several BlastP starting proteins are searched in one `blastp` call
+  against a local database (`-bm local`), which reads the database once
+  instead of once per protein. The `blastp` row of the tools table carries
+  `qseqid` for this; with a row that lacks it the proteins are searched one
+  by one as before. Remote searches are unchanged.
 
 ## 3.8.0
 

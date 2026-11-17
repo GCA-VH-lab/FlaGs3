@@ -19,6 +19,7 @@ RESIDUES = set("ACDEFGHIKLMNPQRSTVWYBZXUO*-")
 TAXIDS = re.compile(r"^\d+(,\d+)*$")
 BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
 POLL_SECONDS = 60
+QUERY_COLUMN = "qseqid"
 DB_ALIASES = {
 	"remote": {"refseq_select": "refseq_select_prot", "refseq_protein": "refseq_protein", "genbank": "nr", "nr": "nr", "swissprot": "swissprot"},
 	"local": {"refseq_select": "refseq_select_protein", "refseq_protein": "refseq_protein", "genbank": "nr", "nr": "nr", "swissprot": "swissprot"},
@@ -104,6 +105,8 @@ def _human(seconds: float) -> str:
 
 
 class RemoteBlast:
+	batched = False
+
 	def __init__(self, database: str, evalue: float, max_hits: int, email: str, max_wait: float, report=print):
 		self.database = DB_ALIASES["remote"].get(database, database)
 		self.evalue = evalue
@@ -188,7 +191,22 @@ class LocalBlast:
 		self.work = work
 		self.exclude = exclude or []
 
+	@property
+	def batched(self) -> bool:
+		return QUERY_COLUMN in self.tool.command
+
 	def search(self, fasta: str) -> list[BlastHit]:
+		return [hit for _, hit in self._run(fasta)]
+
+	def search_batch(self, sequences: list[str]) -> list[list[BlastHit]]:
+		names = ["q{}".format(i + 1) for i in range(len(sequences))]
+		found: dict[str, list[BlastHit]] = {name: [] for name in names}
+		for name, hit in self._run("".join(">{}\n{}\n".format(n, s) for n, s in zip(names, sequences))):
+			if name in found:
+				found[name].append(hit)
+		return [found[name] for name in names]
+
+	def _run(self, fasta: str) -> list[tuple[str, BlastHit]]:
 		found, where = self.tool.locate()
 		if not found:
 			raise BlastError("blastp: {}; flags3 install core sets it up".format(where))
@@ -208,10 +226,11 @@ class LocalBlast:
 		hits = []
 		for line in done.stdout.splitlines():
 			parts = line.split("\t")
+			name = parts.pop(0).strip() if self.batched and parts else ""
 			if len(parts) < 3 or not parts[0].strip():
 				continue
 			try:
-				hits.append(BlastHit(parts[0].strip(), float(parts[1]), float(parts[2]), parts[3].strip() if len(parts) > 3 else ""))
+				hits.append((name, BlastHit(parts[0].strip(), float(parts[1]), float(parts[2]), parts[3].strip() if len(parts) > 3 else "")))
 			except ValueError:
 				continue
 		return hits
